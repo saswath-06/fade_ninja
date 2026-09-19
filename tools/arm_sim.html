@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Fade Arm — pose teleop</title>
+<style>
+  :root {
+    --bg:#0e1116; --panel:#161b22; --line:#262d36; --ink:#e6edf3;
+    --muted:#8b949e; --ok:#3fb950; --warn:#d29922; --bad:#f85149;
+    --phi:#58a6ff; --psi:#bc8cff; --theta:#f0883e;
+  }
+  * { box-sizing:border-box; }
+  html,body { height:100%; margin:0; }
+  body { background:var(--bg); color:var(--ink); overflow:hidden;
+         font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  #gl { position:fixed; inset:0; display:block; }
+  .hud { position:fixed; background:rgba(22,27,34,0.92); border:1px solid var(--line);
+         border-radius:10px; padding:12px 14px; backdrop-filter:blur(6px); }
+  #left { top:14px; left:14px; min-width:250px; }
+  #right { top:14px; right:14px; min-width:190px; }
+  #foot { left:14px; bottom:14px; right:14px; display:flex; gap:22px; flex-wrap:wrap;
+          align-items:center; }
+  h1 { font:700 14px/1 ui-sans-serif,system-ui,sans-serif; margin:0 0 2px;
+       letter-spacing:.04em; }
+  .sub { color:var(--muted); font-size:11px; margin-bottom:10px; }
+  .joint { margin-bottom:9px; }
+  .joint .row { display:flex; justify-content:space-between; align-items:baseline; }
+  .joint .nm { font-size:10.5px; letter-spacing:.07em; color:var(--muted); }
+  .joint .v { font-size:16px; font-variant-numeric:tabular-nums; }
+  .track { height:5px; background:#0b0e13; border-radius:3px; margin-top:4px;
+           position:relative; overflow:hidden; }
+  .track i { position:absolute; top:0; bottom:0; left:0; border-radius:3px; }
+  .j-phi i { background:var(--phi); } .j-psi i { background:var(--psi); }
+  .j-theta i { background:var(--theta); }
+  .j-phi .v { color:var(--phi); } .j-psi .v { color:var(--psi); }
+  .j-theta .v { color:var(--theta); }
+  .lim { color:var(--bad); font-size:10px; margin-left:6px; }
+  .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 10px;
+          border-radius:999px; border:1px solid var(--line); font-size:11px;
+          color:var(--muted); }
+  .pill b { width:8px; height:8px; border-radius:50%; background:var(--muted); }
+  .pill.on { color:var(--ink); } .pill.on b { background:var(--ok); }
+  .pill.cut.on b { background:var(--bad); }
+  .pill.warn { color:var(--warn); } .pill.warn b { background:var(--warn); }
+  .kv { display:flex; justify-content:space-between; gap:14px; font-size:11.5px;
+        color:var(--muted); }
+  .kv span:last-child { color:var(--ink); font-variant-numeric:tabular-nums; }
+  #err { position:fixed; inset:0; display:none; place-items:center; text-align:center;
+         padding:30px; color:var(--muted); }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="err"><div><b style="color:var(--ink)">3D failed to load.</b><br/>
+Three.js could not be fetched — check the network, then reload.</div></div>
+
+<div class="hud" id="left">
+  <h1>FADE ARM</h1>
+  <div class="sub">phone pose &rarr; joint targets</div>
+  <div class="joint j-phi">
+    <div class="row"><span class="nm">PHI &mdash; HEIGHT</span>
+      <span><span class="v" id="vphi">0.0</span>°<span class="lim" id="lphi"></span></span></div>
+    <div class="track"><i id="bphi"></i></div>
+  </div>
+  <div class="joint j-psi">
+    <div class="row"><span class="nm">PSI &mdash; AROUND</span>
+      <span><span class="v" id="vpsi">0.0</span>°<span class="lim" id="lpsi"></span></span></div>
+    <div class="track"><i id="bpsi"></i></div>
+  </div>
+  <div class="joint j-theta">
+    <div class="row"><span class="nm">THETA &mdash; TILT</span>
+      <span><span class="v" id="vtheta">0.0</span>°<span class="lim" id="ltheta"></span></span></div>
+    <div class="track"><i id="btheta"></i></div>
+  </div>
+</div>
+
+<div class="hud" id="right">
+  <div class="kv"><span>phone x</span><span id="px">0.000</span></div>
+  <div class="kv"><span>phone y</span><span id="py">0.000</span></div>
+  <div class="kv"><span>phone z</span><span id="pz">0.000</span></div>
+  <div class="kv" style="margin-top:8px"><span>packets</span><span id="pk">0</span></div>
+  <div class="kv"><span>rejected</span><span id="rj">0</span></div>
+  <div class="kv"><span>takes</span><span id="tk">0</span></div>
+</div>
+
+<div class="hud" id="foot">
+  <span class="pill" id="pClutch"><b></b>CLUTCH</span>
+  <span class="pill" id="pTrack"><b></b>TRACKING</span>
+  <span class="pill" id="pLink"><b></b>LINK</span>
+  <span class="pill cut" id="pCut"><b></b>CLIPPER</span>
+  <span style="color:var(--muted);font-size:11px">drag to orbit &middot; scroll to zoom &middot; T trail</span>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+  "use strict";
+  if (typeof THREE === "undefined") {
+    document.getElementById("err").style.display = "grid"; return;
+  }
+  const $ = id => document.getElementById(id);
+
+  // --- machine geometry, in head.py's millimetres / 100
+  const EL_OFFSET = -20;            // phi 0 sits 20deg below the equator
+  const HEAD = {x:0.90, y:1.00, z:0.78};   // front-back, vertical, ear-ear
+  const RAIL_R = 1.10;
+  const LIM = {phi:[0,70], psi:[0,180], theta:[0,60]};
+
+  const renderer = new THREE.WebGLRenderer({canvas:$("gl"), antialias:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0e1116);
+  scene.fog = new THREE.Fog(0x0e1116, 6, 14);
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 60);
+
+  scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x141820, 0.85));
+  const key = new THREE.DirectionalLight(0xffffff, 0.8); key.position.set(3,5,2);
+  scene.add(key);
+  const rim = new THREE.DirectionalLight(0x6fa8ff, 0.35); rim.position.set(-3,1,-3);
+  scene.add(rim);
+
+  // --- stage
+  const grid = new THREE.GridHelper(8, 32, 0x2a3340, 0x1b2129);
+  grid.position.y = -1.6; scene.add(grid);
+  const axes = new THREE.AxesHelper(0.5); axes.position.y = -1.6; scene.add(axes);
+
+  // --- head: solid shell plus a wire cage so you can see the arm behind it
+  const headGeo = new THREE.SphereGeometry(1, 48, 32);
+  headGeo.scale(HEAD.x, HEAD.y, HEAD.z);
+  const head = new THREE.Mesh(headGeo, new THREE.MeshStandardMaterial(
+    {color:0x2b3442, roughness:0.9, metalness:0.0,
+     transparent:true, opacity:0.28}));
+  scene.add(head);
+  const cage = new THREE.LineSegments(new THREE.WireframeGeometry(
+    new THREE.SphereGeometry(1.004, 24, 16).scale(HEAD.x, HEAD.y, HEAD.z)),
+    new THREE.LineBasicMaterial({color:0x46586e, transparent:true, opacity:0.55}));
+  scene.add(cage);
+  // neck, so up/down reads unambiguously
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.27, 0.62, 20),
+    new THREE.MeshStandardMaterial({color:0x232b36, roughness:0.95}));
+  neck.position.y = -1.22; scene.add(neck);
+
+  // --- rail: arc in a vertical plane, whole group yaws with psi
+  const railGroup = new THREE.Group(); scene.add(railGroup);
+  const ARC_LO = -28, ARC_HI = 58;                     // beyond travel, visibly
+  const arc = new THREE.Mesh(
+    new THREE.TorusGeometry(RAIL_R, 0.018, 10, 96,
+                            THREE.MathUtils.degToRad(ARC_HI - ARC_LO)),
+    new THREE.MeshStandardMaterial({color:0x4d5b6d, roughness:0.5, metalness:0.6}));
+  arc.rotation.z = THREE.MathUtils.degToRad(ARC_LO);
+  railGroup.add(arc);
+  for (const e of [ARC_LO, ARC_HI]) {                  // rail end stops
+    const r = THREE.MathUtils.degToRad(e);
+    const stop = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10),
+      new THREE.MeshStandardMaterial({color:0x6b7a8d, roughness:0.4, metalness:0.7}));
+    stop.position.set(RAIL_R*Math.cos(r), RAIL_R*Math.sin(r), 0);
+    railGroup.add(stop);
+  }
+
+  // --- carriage + spring slide + clipper, all children of the rail
+  const carriage = new THREE.Group(); railGroup.add(carriage);
+  const block = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.19, 0.25),
+    new THREE.MeshStandardMaterial({color:0x58a6ff, roughness:0.3, metalness:0.45,
+                                    emissive:0x0a2647}));
+  carriage.add(block);
+  // slide points inward, toward the head centre (local -X)
+  const slide = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.20, 12),
+    new THREE.MeshStandardMaterial({color:0x8b949e, roughness:0.3, metalness:0.8}));
+  slide.rotation.z = Math.PI/2; slide.position.x = -0.10; carriage.add(slide);
+
+  const clipper = new THREE.Group(); clipper.position.x = -0.20; carriage.add(clipper);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.13, 0.26),
+    new THREE.MeshStandardMaterial({color:0x2f3742, roughness:0.45, metalness:0.4}));
+  body.position.x = -0.08; clipper.add(body);
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.022, 0.28),
+    new THREE.MeshStandardMaterial({color:0xf0883e, roughness:0.25, metalness:0.7,
+                                    emissive:0x000000}));
+  blade.position.x = 0.03; clipper.add(blade);
+  const tipMarker = new THREE.Object3D(); tipMarker.position.x = 0.055; clipper.add(tipMarker);
+  // tool centre point: where the blade meets the scalp
+  const tcp = new THREE.Mesh(new THREE.SphereGeometry(0.03, 14, 12),
+    new THREE.MeshBasicMaterial({color:0xffa657}));
+  tcp.renderOrder = 3; tcp.material.depthTest = false;
+  tipMarker.add(tcp);
+
+  // --- clipper-tip trail
+  const MAX_TRAIL = 900;
+  const trailGeo = new THREE.BufferGeometry();
+  trailGeo.setAttribute("position",
+    new THREE.BufferAttribute(new Float32Array(MAX_TRAIL*3), 3));
+  const trail = new THREE.Line(trailGeo, new THREE.LineBasicMaterial(
+    {color:0xffa657, transparent:true, opacity:1.0}));
+  trail.frustumCulled = false; trail.renderOrder = 2;
+  trail.material.depthTest = false; scene.add(trail);
+  let trailN = 0, trailOn = true;
+  const tipWorld = new THREE.Vector3();
+
+  function pushTrail() {
+    tipMarker.getWorldPosition(tipWorld);
+    const a = trailGeo.attributes.position;
+    if (trailN >= MAX_TRAIL) {                 // shift window
+      a.array.copyWithin(0, 3); trailN = MAX_TRAIL - 1;
+    }
+    a.array[trailN*3] = tipWorld.x; a.array[trailN*3+1] = tipWorld.y;
+    a.array[trailN*3+2] = tipWorld.z;
+    trailN++;
+    a.needsUpdate = true;
+    trailGeo.setDrawRange(0, trailN);
+  }
+
+  // --- phone ghost: where your hand is, relative to the engage point
+  const ghost = new THREE.Group(); scene.add(ghost);
+  const ghostBody = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.26, 0.03),
+    new THREE.MeshStandardMaterial({color:0xbc8cff, roughness:0.5,
+                                    transparent:true, opacity:0.75}));
+  ghost.add(ghostBody);
+  ghost.add(new THREE.AxesHelper(0.22));
+
+  // --- pose from joints
+  function setJoints(phi, psi, theta) {
+    railGroup.rotation.y = THREE.MathUtils.degToRad(-psi);
+    const el = THREE.MathUtils.degToRad(phi + EL_OFFSET);
+    carriage.position.set(RAIL_R*Math.cos(el), RAIL_R*Math.sin(el), 0);
+    carriage.rotation.z = el;                  // slide always aims at centre
+    clipper.rotation.z = THREE.MathUtils.degToRad(theta);
+  }
+
+  // --- orbit camera
+  let az = 2.3, el = 0.42, dist = 4.6, drag = false, lx = 0, ly = 0;
+  addEventListener("pointerdown", e => { drag = true; lx = e.clientX; ly = e.clientY; });
+  addEventListener("pointerup", () => drag = false);
+  addEventListener("pointermove", e => {
+    if (!drag) return;
+    az -= (e.clientX - lx) * 0.007;
+    el = Math.max(-0.9, Math.min(1.35, el + (e.clientY - ly) * 0.006));
+    lx = e.clientX; ly = e.clientY;
+  });
+  addEventListener("wheel", e => {
+    e.preventDefault();
+    dist = Math.max(2.2, Math.min(11, dist + Math.sign(e.deltaY) * 0.35));
+  }, {passive:false});
+  addEventListener("keydown", e => {
+    if (e.key === "t" || e.key === "T") {
+      trailOn = !trailOn;
+      if (!trailOn) { trailN = 0; trailGeo.setDrawRange(0, 0); }
+    }
+  });
+
+  // --- telemetry
+  let st = null;
+  function connect() {
+    const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://")
+                             + location.host + "/ws");
+    ws.onmessage = ev => { try { st = JSON.parse(ev.data); } catch (e) {} };
+    ws.onclose = () => { st = null; setTimeout(connect, 1200); };
+  }
+  connect();
+
+  const pill = (el, on, warn) => {
+    el.classList.toggle("on", !!on && !warn);
+    el.classList.toggle("warn", !!warn);
+  };
+  function bar(id, v, lim) {
+    const f = (v - lim[0]) / (lim[1] - lim[0]);
+    $(id).style.width = (Math.max(0, Math.min(1, f)) * 100).toFixed(1) + "%";
+  }
+
+  function applyStatus() {
+    if (!st) { pill($("pLink"), false); return; }
+    const j = st.joints, t = st.teleop;
+    setJoints(j.phi, j.psi, j.theta);
+    $("vphi").textContent = j.phi.toFixed(1);
+    $("vpsi").textContent = j.psi.toFixed(1);
+    $("vtheta").textContent = j.theta.toFixed(1);
+    bar("bphi", j.phi, LIM.phi); bar("bpsi", j.psi, LIM.psi);
+    bar("btheta", j.theta, LIM.theta);
+    $("lphi").textContent = t.clamped.phi ? "LIMIT" : "";
+    $("lpsi").textContent = t.clamped.psi ? "LIMIT" : "";
+    $("ltheta").textContent = t.clamped.theta ? "LIMIT" : "";
+
+    $("px").textContent = st.phone.x.toFixed(3);
+    $("py").textContent = st.phone.y.toFixed(3);
+    $("pz").textContent = st.phone.z.toFixed(3);
+    $("pk").textContent = st.packets;
+    $("rj").textContent = st.rejected;
+    $("tk").textContent = st.takes;
+
+    ghost.position.set(1.9 + st.phone.x * 2, st.phone.y * 2, st.phone.z * 2);
+    ghost.visible = t.engaged;
+    ghostBody.material.opacity = t.engaged ? 0.75 : 0.2;
+
+    blade.material.emissive.setHex(st.clipper ? 0xf0883e : 0x000000);
+    if (trailOn && st.clipper && t.engaged && !st.stale) pushTrail();
+
+    pill($("pClutch"), t.engaged);
+    pill($("pTrack"), t.tracking_ok, !t.tracking_ok);
+    pill($("pLink"), !st.stale, st.stale);
+    pill($("pCut"), st.clipper);
+  }
+
+  function resize() {
+    const w = innerWidth, h = innerHeight;
+    if (renderer.domElement.width !== Math.round(w * renderer.getPixelRatio())) {
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h; camera.updateProjectionMatrix();
+    }
+  }
+  function loop() {
+    resize();
+    applyStatus();
+    camera.position.set(dist*Math.cos(el)*Math.sin(az), dist*Math.sin(el),
+                        dist*Math.cos(el)*Math.cos(az));
+    camera.lookAt(0, -0.15, 0);
+    renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+  }
+  setJoints(20, 90, 15);
+  loop();
+})();
+</script>
+</body>
+</html>

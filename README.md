@@ -209,6 +209,29 @@ uv run python tools/fake_phone.py --circle 0.05   # no phone needed
 
 Build the ARKit app from `ios/FadePose/README.md`. Gates: `PHONE_POSE_TDD.md`.
 
+### ARKit pose teleop + 3D viewer (`pose_teleop.py`, `teleop_sim.py`)
+
+The FadePose app's 6DoF pose drives the same three joints directly: move the
+phone up and the clipper climbs the head, swing it around and it travels
+around the head, tilt your wrist and the clipper opens up.
+
+```
+uv run python teleop_sim.py        # then open the printed http://127.0.0.1:8465/
+```
+
+The app's Start/Stop is a **clutch**. Engaging anchors the phone pose to the
+arm's current joints, so no axis jumps; releasing lets you reposition your
+hand without the arm following. That bounds ARKit drift to one stroke rather
+than a session — the reason absolute position is usable here at all. Losing
+tracking holds position rather than extrapolating, and a quiet link stops the
+arm after 250 ms. Live teleop clamps at the joint limits (replay still
+refuses, since a bad log should never run).
+
+`tools/arm_sim.html` is the viewer: the rail, carriage and clipper in 3D with
+joint bars, limit flags, a clipper-tip trail and link/tracking/clutch status.
+Each engaged stroke is recorded from the arm's encoders, so a session leaves
+ordinary teach logs that replay with `teach_phone.py --replay`.
+
 ### Hardware path (Pi 4 + Arduino)
 
 The Pi runs this Python stack unchanged; the Arduino
