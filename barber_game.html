@@ -1,0 +1,548 @@
+<title>Fade Dojo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Committed single-theme: a night-lit barber studio. All colors explicit. */
+  :root {
+    --ground: #15171b; --panel: #1e2228; --panel-2: #262c34;
+    --ink: #edf0f3; --muted: #98a1ab; --line: #333a44;
+    --steel: #6ea8dc; --pole-red: #d94f4f; --brass: #c9a227;
+    --ok: #58b368;
+  }
+  html, body { height: 100%; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    padding-inline: 16px; padding-block: 10px 14px;
+    box-sizing: border-box;
+  }
+  .app { display: flex; gap: 14px; height: 100%; max-width: 1400px; margin: 0 auto; }
+  .stage { position: relative; flex: 1 1 auto; min-width: 0; border-radius: 12px;
+           overflow: hidden; border: 1px solid var(--line); background: #101216; }
+  #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+        cursor: crosshair; touch-action: none; }
+
+  .hud { position: absolute; pointer-events: none; font-size: 12px; color: var(--muted); }
+  .hud-title { top: 12px; left: 14px; }
+  .hud-title h1 { font: 400 22px/1 "Alfa Slab One", "Archivo", serif; color: var(--ink);
+                  margin: 0 0 2px; letter-spacing: 0.02em; }
+  .hud-gauge { left: 14px; bottom: 12px; background: rgba(20,23,27,0.82);
+               border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px;
+               font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+  .hud-gauge .mm { font-size: 24px; color: var(--ink); font-weight: 500; }
+  .hud-gauge .bar { width: 150px; height: 6px; background: var(--panel-2);
+                    border-radius: 3px; margin-top: 6px; overflow: hidden; }
+  .hud-gauge .bar i { display: block; height: 100%; background: var(--steel); width: 10%; }
+  .hud-motor { right: 14px; top: 12px; pointer-events: auto; }
+  #motorBtn { font: 700 13px "Archivo", sans-serif; letter-spacing: 0.06em;
+              padding: 10px 18px; border-radius: 999px; cursor: pointer;
+              border: 1px solid var(--line); background: var(--panel); color: var(--muted); }
+  #motorBtn.on { background: var(--pole-red); border-color: var(--pole-red); color: #fff;
+                 box-shadow: 0 0 18px rgba(217,79,79,0.55); }
+  .hud-log { right: 14px; bottom: 12px; font-family: "IBM Plex Mono", monospace; }
+
+  .rail { flex: 0 0 300px; display: flex; flex-direction: column; gap: 12px;
+          overflow-y: auto; min-width: 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+          padding: 12px 14px; }
+  .card h2 { margin: 0 0 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.09em;
+             text-transform: uppercase; color: var(--muted); }
+  .card p { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
+  button, select {
+    font: 600 12.5px "Archivo", sans-serif; color: var(--ink);
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 12px; cursor: pointer;
+  }
+  button:focus-visible, select:focus-visible, #motorBtn:focus-visible {
+    outline: 2px solid var(--steel); outline-offset: 2px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+  #videoWrap { position: relative; margin-top: 8px; border-radius: 8px; overflow: hidden;
+               background: #0c0e11; aspect-ratio: 4/3; max-width: 100%; }
+  #video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); display: block; }
+  #videoDot { position: absolute; width: 14px; height: 14px; border-radius: 50%;
+              border: 2px solid var(--steel); transform: translate(-50%, -50%);
+              display: none; pointer-events: none; }
+  #camHint { font-size: 11.5px; }
+  .lockchip { display: inline-block; width: 12px; height: 12px; border-radius: 3px;
+              border: 1px solid var(--line); vertical-align: -2px; background: #444; }
+
+  #minimap { width: 100%; border-radius: 6px; border: 1px solid var(--line);
+             display: block; background: #0c0e11; }
+  .grade { display: flex; align-items: baseline; gap: 10px; margin-top: 8px;
+           font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+  .grade .letter { font: 400 34px/1 "Alfa Slab One", serif; color: var(--brass); }
+  .grade .detail { font-size: 12px; color: var(--muted); }
+
+  .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px;
+          font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .keys kbd { font: 500 11px "IBM Plex Mono", monospace; background: var(--panel-2);
+              border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px;
+              color: var(--ink); justify-self: start; }
+
+  @media (max-width: 860px) {
+    .app { flex-direction: column; height: auto; }
+    .stage { height: 62vh; min-height: 380px; }
+    .rail { flex: none; }
+  }
+</style>
+
+<div class="app">
+  <div class="stage">
+    <canvas id="gl" aria-label="3D head — move to place the clipper"></canvas>
+    <div class="hud hud-title">
+      <h1>FADE DOJO</h1>
+      <div>hover to place the clipper &middot; drag to walk around the chair</div>
+    </div>
+    <div class="hud hud-motor"><button id="motorBtn">MOTOR OFF — space</button></div>
+    <div class="hud hud-gauge">
+      <div><span class="mm" id="mmOut">0.6</span> <span>mm left</span></div>
+      <div id="thetaOut">tilt 0&deg; &middot; h = L&middot;sin&theta;</div>
+      <div class="bar"><i id="tiltBar"></i></div>
+    </div>
+    <div class="hud hud-log" id="logOut">log: 0 samples</div>
+  </div>
+
+  <div class="rail">
+    <div class="card">
+      <h2>Hand tracking</h2>
+      <div class="row">
+        <button id="camBtn">Enable camera</button>
+        <span id="lockChip" class="lockchip" title="locked color"></span>
+        <span id="camState" style="font-size:12px;color:var(--muted)">off — using mouse</span>
+      </div>
+      <div id="videoWrap" hidden>
+        <video id="video" playsinline muted></video>
+        <div id="videoDot"></div>
+      </div>
+      <p id="camHint">Hold any brightly colored object (marker cap, sticky note),
+      then <b>click it in the video</b> to lock on. The object becomes the clipper;
+      <kbd style="font-family:'IBM Plex Mono',monospace">space</kbd> runs the motor.
+      If the camera is blocked here, run the game from the repo:
+      <span style="font-family:'IBM Plex Mono',monospace">python3 -m http.server 8123</span>
+      &rarr; localhost:8123/barber_game.html</p>
+    </div>
+
+    <div class="card">
+      <h2>The order</h2>
+      <div class="row">
+        <select id="targetSel" aria-label="Target cut">
+          <option value="low">Low fade</option>
+          <option value="high">High fade</option>
+          <option value="buzz">Buzz — 3.1 mm all over</option>
+        </select>
+        <button id="showTarget">Show target</button>
+      </div>
+      <canvas id="minimap" width="256" height="110" style="margin-top:8px"></canvas>
+      <div class="row" style="margin-top:8px">
+        <button id="gradeBtn">Grade my cut</button>
+        <button id="resetBtn">Fresh head</button>
+      </div>
+      <div class="grade" id="gradeRow" hidden>
+        <span class="letter" id="gradeLetter">B</span>
+        <span class="detail" id="gradeDetail"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Controls</h2>
+      <div class="keys">
+        <kbd>hover</kbd><span>place clipper on the head</span>
+        <kbd>space</kbd><span>clipper motor on / off</span>
+        <kbd>scroll</kbd><span>tilt &mdash; more tilt leaves longer hair</span>
+        <kbd>&uarr; &darr;</kbd><span>tilt fine adjust</span>
+        <kbd>drag</kbd><span>orbit around the chair</span>
+      </div>
+      <p>Same physics as the robot: the heel rides the scalp and
+      <b>h&nbsp;=&nbsp;L&middot;sin&theta;</b> sets what's left, through the real
+      calibration table (0&deg;&rarr;0.6&nbsp;mm &hellip; 60&deg;&rarr;8.2&nbsp;mm).
+      A 45&nbsp;mm blade: overlap your passes or you'll leave seams.</p>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+  "use strict";
+  // ----------------------------------------------------------- barber math
+  const CAL = [[0, 0.6], [15, 1.5], [30, 3.1], [45, 5.4], [60, 8.2]];
+  const calMM = th => {
+    if (th <= 0) return CAL[0][1];
+    for (let i = 1; i < CAL.length; i++)
+      if (th <= CAL[i][0]) {
+        const f = (th - CAL[i-1][0]) / (CAL[i][0] - CAL[i-1][0]);
+        return CAL[i-1][1] + f * (CAL[i][1] - CAL[i-1][1]);
+      }
+    return CAL[CAL.length-1][1];
+  };
+  const HEAD_R_MM = 90, BLADE_W_MM = 45, BLADE_D_MM = 9, HAIR0 = 20;
+  const TARGETS = {
+    low:  u => 0.6 + 5.4 * Math.pow(Math.min(Math.max(u,0),1), 1.6),
+    high: u => 0.6 + 5.4 * Math.pow(Math.min(Math.max(u,0),1), 4.0),
+    buzz: () => 3.1,
+  };
+
+  // ------------------------------------------------------------ hair field
+  const W = 512, H = 256;                      // texture cells (u, v)
+  const hair = new Float32Array(W * H).fill(HAIR0);
+  const FACE_U = 0.25, FACE_HALF = 0.17;       // face points +z (camera front)
+  const wrapDU = (a, b) => { let d = Math.abs(a - b); return Math.min(d, 1 - d); };
+  const isFace = (u, v) => wrapDU(u, FACE_U) < FACE_HALF && v > 0.26 && v < 0.66;
+  const hasHair = (u, v) => v > 0.03 && v < 0.72 && !isFace(u, v);
+  const elOf = v => 90 - v * 180;              // latitude deg (+ up)
+  // practice band graded against the order (el -35..40, face excluded wide)
+  const inBand = (u, v) => {
+    const el = elOf(v);
+    return el > -35 && el < 40 && wrapDU(u, FACE_U) > FACE_HALF + 0.05 && hasHair(u, v);
+  };
+  const uHeight = v => (elOf(v) + 35) / 75;
+
+  // ------------------------------------------------------- texture painting
+  const texCanvas = document.createElement("canvas");
+  texCanvas.width = W; texCanvas.height = H;
+  const tctx = texCanvas.getContext("2d");
+  const SKIN = [214, 172, 138], HAIR_DARK = [38, 31, 27];
+  function cellColor(x, y) {
+    const u = (x + 0.5) / W, v = (y + 0.5) / H;
+    if (!hasHair(u, v)) return SKIN;
+    const t = Math.pow(Math.min(hair[y * W + x], HAIR0) / HAIR0, 0.5);
+    return [0, 1, 2].map(i => Math.round(SKIN[i] + (HAIR_DARK[i] - SKIN[i]) * t));
+  }
+  function paintRect(x0, y0, x1, y1) {
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++) {
+        const c = cellColor(x, y);
+        tctx.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
+        tctx.fillRect(x, y, 1, 1);
+      }
+  }
+  function paintFace() {  // simple features so it reads as a person
+    const cx = FACE_U * W, cy = 0.44 * H;
+    tctx.fillStyle = "#5a4636";
+    tctx.beginPath(); tctx.ellipse(cx - 22, cy - 8, 5, 3, 0, 0, 7); tctx.fill();
+    tctx.beginPath(); tctx.ellipse(cx + 22, cy - 8, 5, 3, 0, 0, 7); tctx.fill();
+    tctx.strokeStyle = "#b07a5a"; tctx.lineWidth = 2;
+    tctx.beginPath(); tctx.moveTo(cx - 3, cy + 2); tctx.quadraticCurveTo(cx, cy + 10, cx + 3, cy + 2); tctx.stroke();
+    tctx.strokeStyle = "#8a5c42";
+    tctx.beginPath(); tctx.moveTo(cx - 10, cy + 22); tctx.quadraticCurveTo(cx, cy + 27, cx + 10, cy + 22); tctx.stroke();
+  }
+  function repaintAll() { paintRect(0, 0, W - 1, H - 1); paintFace(); texture.needsUpdate = true; }
+
+  // ------------------------------------------------------------- three.js
+  const glCanvas = document.getElementById("gl");
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: true });
+  } catch (err) {
+    const msg = document.createElement("div");
+    msg.style.cssText = "position:absolute;inset:0;display:flex;align-items:center;" +
+      "justify-content:center;color:#98a1ab;font-size:14px;text-align:center;padding:24px";
+    msg.textContent = "This browser couldn't start WebGL — try Chrome/Safari with " +
+      "hardware acceleration on.";
+    glCanvas.parentElement.appendChild(msg);
+    renderer = null;
+  }
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x101216);
+  const camera = new THREE.PerspectiveCamera(42, 1, 0.05, 40);
+  scene.add(new THREE.HemisphereLight(0xdfe8f2, 0x22262c, 0.95));
+  const key = new THREE.DirectionalLight(0xffffff, 0.7);
+  key.position.set(2, 3, -2); scene.add(key);
+  const fill = new THREE.DirectionalLight(0x9db8d6, 0.35);
+  fill.position.set(-2, 1, 2); scene.add(fill);
+
+  const texture = new THREE.CanvasTexture(texCanvas);
+  texture.magFilter = THREE.LinearFilter;
+  const headGeo = new THREE.SphereGeometry(1, 96, 64);
+  headGeo.scale(0.86, 1.06, 0.92);
+  headGeo.computeVertexNormals();
+  const head = new THREE.Mesh(headGeo,
+    new THREE.MeshStandardMaterial({ map: texture, roughness: 0.85, metalness: 0.0 }));
+  scene.add(head);
+  // neck + shoulders so it sits in a chair
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.42, 0.7, 24),
+    new THREE.MeshStandardMaterial({ color: 0xd6ac8a, roughness: 0.9 }));
+  neck.position.y = -1.15; scene.add(neck);
+  const cape = new THREE.Mesh(new THREE.ConeGeometry(1.5, 1.6, 32, 1, true),
+    new THREE.MeshStandardMaterial({ color: 0x2e3640, roughness: 0.95, side: THREE.DoubleSide }));
+  cape.position.y = -2.05; scene.add(cape);
+
+  // clipper
+  const clipper = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.26, 0.9),
+    new THREE.MeshStandardMaterial({ color: 0x30363e, roughness: 0.6, metalness: 0.3 }));
+  body.position.z = 0.55; clipper.add(body);
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.16),
+    new THREE.MeshStandardMaterial({ color: 0xaeb9c4, roughness: 0.3, metalness: 0.8 }));
+  blade.position.z = 0.08; clipper.add(blade);
+  const led = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 12),
+    new THREE.MeshStandardMaterial({ color: 0x552222, emissive: 0x000000 }));
+  led.position.set(0.16, 0.16, 0.8); clipper.add(led);
+  clipper.visible = false; scene.add(clipper);
+
+  // ------------------------------------------------------------- game state
+  let theta = 15, motor = false, camMode = false;
+  let azim = Math.PI, elev = 0.15, dist = 3.1;   // start behind the chair
+  const pointer = new THREE.Vector2(0, 0);
+  let havePointer = false;
+  const raycaster = new THREE.Raycaster();
+  let logCount = 0, mapDirty = true, showTargetMode = false;
+
+  const $ = id => document.getElementById(id);
+  function setMotor(on) {
+    motor = on;
+    $("motorBtn").textContent = on ? "MOTOR LIVE — space" : "MOTOR OFF — space";
+    $("motorBtn").classList.toggle("on", on);
+    led.material.emissive.setHex(on ? 0xd94f4f : 0x000000);
+  }
+  function setTheta(t) {
+    theta = Math.min(60, Math.max(0, t));
+    $("mmOut").textContent = calMM(theta).toFixed(1);
+    $("thetaOut").innerHTML = `tilt ${theta.toFixed(0)}&deg; &middot; h = L&middot;sin&theta;`;
+    $("tiltBar").style.width = (theta / 60 * 100).toFixed(0) + "%";
+  }
+
+  // ------------------------------------------------------------------ cut
+  function cutAt(uvx, uvy) {
+    const v = uvy, el = elOf(v);
+    const rho = Math.max(HEAD_R_MM * Math.cos(el * Math.PI / 180), 15);
+    const halfWu = (BLADE_W_MM / 2) / (2 * Math.PI * rho);
+    const halfDv = (BLADE_D_MM / 2) / (Math.PI * HEAD_R_MM);
+    const leave = calMM(theta);
+    const x0 = Math.floor((uvx - halfWu) * W), x1 = Math.ceil((uvx + halfWu) * W);
+    const y0 = Math.max(0, Math.floor((v - halfDv) * H));
+    const y1 = Math.min(H - 1, Math.ceil((v + halfDv) * H));
+    for (let y = y0; y <= y1; y++)
+      for (let xx = x0; xx <= x1; xx++) {
+        const x = ((xx % W) + W) % W;                 // psi wraps
+        const u = (x + 0.5) / W;
+        if (!hasHair(u, (y + 0.5) / H)) continue;
+        const k = y * W + x;
+        if (hair[k] > leave) hair[k] = leave;
+      }
+    paintRect(0, y0, W - 1, y1);                      // cheap dirty-row repaint
+    texture.needsUpdate = true;
+    mapDirty = true;
+    logCount++;
+    if (logCount % 10 === 0) $("logOut").textContent = `log: ${logCount} samples`;
+  }
+
+  // --------------------------------------------------------------- minimap
+  const map = $("minimap"), mapCtx = map.getContext("2d");
+  function drawMinimap() {
+    const mw = map.width, mh = map.height;
+    const img = mapCtx.createImageData(mw, mh);
+    const curve = TARGETS[$("targetSel").value];
+    for (let y = 0; y < mh; y++)
+      for (let x = 0; x < mw; x++) {
+        // map: x -> u, y -> band top..bottom (el 40 -> -35)
+        const u = x / mw;
+        const el = 40 - (y / mh) * 75;
+        const v = (90 - el) / 180;
+        let c;
+        if (!inBand(u, v)) c = [26, 29, 34];
+        else {
+          const len = showTargetMode ? curve(uHeight(v))
+                                     : hair[Math.floor(v * H) * W + Math.floor(u * W)];
+          const t = Math.pow(Math.min(len, HAIR0) / HAIR0, 0.5);
+          c = [0, 1, 2].map(i => Math.round(SKIN[i] + (HAIR_DARK[i] - SKIN[i]) * t));
+        }
+        const p = (y * mw + x) * 4;
+        img.data[p] = c[0]; img.data[p+1] = c[1]; img.data[p+2] = c[2]; img.data[p+3] = 255;
+      }
+    mapCtx.putImageData(img, 0, 0);
+    mapCtx.fillStyle = "rgba(237,240,243,0.75)";
+    mapCtx.font = "10px 'IBM Plex Mono', monospace";
+    mapCtx.fillText(showTargetMode ? "TARGET" : "YOUR CUT", 6, 12);
+  }
+
+  function grade() {
+    const curve = TARGETS[$("targetSel").value];
+    let n = 0, sumAbs = 0, within = 0, uncut = 0;
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x += 2) {
+        const u = (x + 0.5) / W, v = (y + 0.5) / H;
+        if (!inBand(u, v)) continue;
+        const len = hair[y * W + x], tgt = curve(uHeight(v));
+        n++; const e = Math.abs(len - tgt);
+        sumAbs += e;
+        if (e < 0.75) within++;
+        if (len >= HAIR0 - 0.01) uncut++;
+      }
+    const mean = sumAbs / Math.max(n, 1), pct = within / Math.max(n, 1) * 100;
+    const uncutPct = uncut / Math.max(n, 1) * 100;
+    const letter = uncutPct > 12 ? "F" : mean < 0.35 ? "A" : mean < 0.6 ? "B"
+                 : mean < 1.0 ? "C" : mean < 1.8 ? "D" : "F";
+    $("gradeRow").hidden = false;
+    $("gradeLetter").textContent = letter;
+    $("gradeDetail").textContent =
+      `${mean.toFixed(2)} mm mean error - ${pct.toFixed(0)}% within 0.75 mm` +
+      (uncutPct > 2 ? ` - ${uncutPct.toFixed(0)}% untouched` : "");
+  }
+
+  // ------------------------------------------------------------ interaction
+  glCanvas.addEventListener("pointermove", e => {
+    if (camMode) return;
+    const r = glCanvas.getBoundingClientRect();
+    pointer.x = ((e.clientX - r.left) / r.width) * 2 - 1;
+    pointer.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+    havePointer = true;
+    if (dragging) {
+      azim -= (e.clientX - dragX) * 0.008;
+      elev = Math.min(1.2, Math.max(-0.7, elev + (e.clientY - dragY) * 0.006));
+      dragX = e.clientX; dragY = e.clientY;
+    }
+  });
+  let dragging = false, dragX = 0, dragY = 0, dragMoved = 0;
+  glCanvas.addEventListener("pointerdown", e => {
+    dragging = true; dragX = e.clientX; dragY = e.clientY; dragMoved = 0;
+    glCanvas.setPointerCapture(e.pointerId);
+  });
+  glCanvas.addEventListener("pointerup", () => { dragging = false; });
+  glCanvas.addEventListener("wheel", e => {
+    e.preventDefault(); setTheta(theta - Math.sign(e.deltaY) * 3);
+  }, { passive: false });
+  window.addEventListener("keydown", e => {
+    if (e.code === "Space" && e.target.tagName !== "BUTTON" && e.target.tagName !== "SELECT") {
+      e.preventDefault(); setMotor(!motor);
+    }
+    if (e.key === "ArrowUp") { e.preventDefault(); setTheta(theta + 1); }
+    if (e.key === "ArrowDown") { e.preventDefault(); setTheta(theta - 1); }
+  });
+  $("motorBtn").addEventListener("click", () => setMotor(!motor));
+  $("resetBtn").addEventListener("click", () => {
+    hair.fill(HAIR0); repaintAll(); mapDirty = true;
+    logCount = 0; $("logOut").textContent = "log: 0 samples"; $("gradeRow").hidden = true;
+  });
+  $("gradeBtn").addEventListener("click", () => { grade(); });
+  $("showTarget").addEventListener("click", () => {
+    showTargetMode = !showTargetMode; mapDirty = true;
+    $("showTarget").textContent = showTargetMode ? "Show my cut" : "Show target";
+  });
+  $("targetSel").addEventListener("change", () => { mapDirty = true; });
+
+  // --------------------------------------------------- webcam color tracker
+  const video = $("video"), vDot = $("videoDot");
+  const grab = document.createElement("canvas"); grab.width = 160; grab.height = 120;
+  const gctx = grab.getContext("2d", { willReadFrequently: true });
+  let lock = null, smooth = null;
+  $("camBtn").addEventListener("click", async () => {
+    if (camMode) { camMode = false; $("camState").textContent = "off — using mouse"; return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(
+        { video: { width: 320, height: 240 } });
+      video.srcObject = stream; await video.play();
+      $("videoWrap").hidden = false;
+      $("camState").textContent = "on — click your object to lock";
+      camMode = true;
+    } catch (err) {
+      $("camState").textContent = "camera blocked here — run on localhost (see below)";
+    }
+  });
+  $("videoWrap").addEventListener("click", e => {
+    const r = $("videoWrap").getBoundingClientRect();
+    const nx = 1 - (e.clientX - r.left) / r.width;    // display is mirrored
+    const ny = (e.clientY - r.top) / r.height;
+    gctx.drawImage(video, 0, 0, grab.width, grab.height);
+    const px = gctx.getImageData(Math.floor(nx * grab.width) - 2,
+                                 Math.floor(ny * grab.height) - 2, 5, 5).data;
+    let rr = 0, gg = 0, bb = 0;
+    for (let i = 0; i < px.length; i += 4) { rr += px[i]; gg += px[i+1]; bb += px[i+2]; }
+    const nsum = px.length / 4;
+    lock = [rr / nsum, gg / nsum, bb / nsum];
+    $("lockChip").style.background = `rgb(${lock.map(Math.round).join(",")})`;
+    $("camState").textContent = "locked — move the object to cut";
+  });
+  function trackFrame() {
+    if (!camMode || !lock || video.readyState < 2) return;
+    gctx.drawImage(video, 0, 0, grab.width, grab.height);
+    const d = gctx.getImageData(0, 0, grab.width, grab.height).data;
+    const ls = lock[0] + lock[1] + lock[2] + 1;
+    const lr = lock[0] / ls, lg = lock[1] / ls;
+    let sx = 0, sy = 0, n = 0;
+    for (let y = 0; y < grab.height; y += 2)
+      for (let x = 0; x < grab.width; x += 2) {
+        const p = (y * grab.width + x) * 4;
+        const s = d[p] + d[p+1] + d[p+2] + 1;
+        if (s < 90) continue;                          // too dark to trust hue
+        const dr = d[p] / s - lr, dg = d[p+1] / s - lg;
+        if (dr * dr + dg * dg < 0.004) { sx += x; sy += y; n++; }
+      }
+    if (n > 20) {
+      const cx = sx / n / grab.width, cy = sy / n / grab.height;
+      smooth = smooth ? [smooth[0] * 0.6 + cx * 0.4, smooth[1] * 0.6 + cy * 0.4] : [cx, cy];
+      // mirrored x; central 80% of frame maps to full screen
+      const mx = 1 - smooth[0];
+      pointer.x = Math.min(1, Math.max(-1, (mx - 0.5) / 0.4));
+      pointer.y = Math.min(1, Math.max(-1, -(smooth[1] - 0.5) / 0.35));
+      havePointer = true;
+      const r = $("videoWrap").getBoundingClientRect();
+      vDot.style.display = "block";
+      vDot.style.left = (mx * r.width) + "px";
+      vDot.style.top = (smooth[1] * r.height) + "px";
+    } else vDot.style.display = "none";
+  }
+
+  // ------------------------------------------------------------- main loop
+  let frame = 0;
+  function resize() {
+    const r = glCanvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (glCanvas.width !== Math.round(r.width * dpr)) {
+      renderer.setSize(r.width, r.height, false);
+      renderer.setPixelRatio(dpr);
+      camera.aspect = r.width / r.height;
+      camera.updateProjectionMatrix();
+    }
+  }
+  function loop() {
+    if (!renderer) return;
+    frame++;
+    resize();
+    trackFrame();
+    camera.position.set(dist * Math.cos(elev) * Math.sin(azim),
+                        dist * Math.sin(elev),
+                        dist * Math.cos(elev) * Math.cos(azim));
+    camera.lookAt(0, -0.1, 0);
+
+    if (havePointer) {
+      raycaster.setFromCamera(pointer, camera);
+      const hit = raycaster.intersectObject(head)[0];
+      if (hit) {
+        clipper.visible = true;
+        const n = hit.face.normal.clone().transformDirection(head.matrixWorld);
+        clipper.position.copy(hit.point).addScaledVector(n, 0.03);
+        clipper.lookAt(hit.point.clone().addScaledVector(n, -1));
+        if (motor) cutAt(hit.uv.x, hit.uv.y);
+      } else clipper.visible = false;
+    }
+    if (mapDirty && frame % 8 === 0) { drawMinimap(); mapDirty = false; }
+    renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+  }
+
+  // -------------------------------------------------- boot (+hot republish)
+  function start(saved) {
+    try {
+      if (saved && saved.hair && saved.hair.length === W * H) {
+        for (let i = 0; i < hair.length; i++) hair[i] = saved.hair[i] / 10;
+        setTheta(saved.theta ?? 15);
+        $("targetSel").value = saved.target || "low";
+      } else setTheta(15);
+    } catch (e) { setTheta(15); }
+    repaintAll();
+    drawMinimap();
+    setMotor(false);
+    loop();
+  }
+  try {
+    window.claude?.hot?.snapshot?.(() => ({
+      hair: Array.from(hair, x => Math.round(x * 10)),
+      theta, target: $("targetSel").value,
+    }));
+  } catch (e) { /* no runtime */ }
+  if (window.claude?.hot?.ready) window.claude.hot.ready(start);
+  else start(window.claude?.hot?.data ?? null);
+})();
+</script>
