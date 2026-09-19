@@ -184,7 +184,7 @@ where the clipper went.
 No camera and no ARKit **on this rate pendant** — an IMU cannot integrate to
 position without drifting metres in seconds, and rate control does not need
 position. Absolute pose teleop (ARKit → IK → EEZYbotARM) is a separate path;
-see `PHONE_POSE_TDD.md` and the planned `ios/FadePose/` app.
+see `PHONE_POSE_TDD.md` and `ios/FadePose/`.
 
 ```
 uv run python teach_phone.py                        # teach on the sim head
@@ -192,9 +192,22 @@ uv run python teach_phone.py --replay out/phone_teach_1.csv
 uv run python teach_phone.py --hardware /dev/ttyACM0
 ```
 
-Build instructions for the app are in `phone/README.md`. Two independent
+Build instructions for the rate pendant are in `phone/README.md`. Two independent
 watchdogs stop the arm if the phone or the laptop goes quiet (250 ms); the
 e-stop stays physical.
+
+### ARKit pose teleop → EEZYbotARM (`pose_server.py`, `ios/FadePose/`)
+
+Absolute phone position/tilt over UDP `:8463` → IK → joints. Live canvas at
+HTTP `:8464`. Rate pendant on `:8470` is unchanged.
+
+```
+uv run python pose_server.py --host 0.0.0.0
+uv run python tools/fake_phone.py --circle 0.05   # no phone needed
+# open http://<laptop-ip>:8464/
+```
+
+Build the ARKit app from `ios/FadePose/README.md`. Gates: `PHONE_POSE_TDD.md`.
 
 ### Hardware path (Pi 4 + Arduino)
 

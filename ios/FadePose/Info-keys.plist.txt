@@ -1,0 +1,11 @@
+# Add these to the Xcode target Info tab (or Info.plist):
+
+NSCameraUsageDescription
+  Camera is used only for ARKit world tracking so the phone can measure
+  how far it has moved. Image frames are never stored or sent.
+
+NSLocalNetworkUsageDescription
+  Sends phone pose samples to the barber robot laptop on the local network.
+
+NSBonjourServices (optional array)
+  Leave empty unless you add Bonjour discovery later.
