@@ -171,19 +171,28 @@ within 0.03 mm; seams vanish once pass advance drops below ~43 mm for the
 45 mm blade; a profile exported from one head lands within 0.17 mm on a
 head 10% larger.
 
-### Vision control (`camera.py`, `vision.py`, `autopilot.py`)
+### The teach glove is an iPhone (`phone/`, `pendant.py`)
 
-Computer vision controls the arm per section 4: a reference photo is read
-into a target profile, passes are planned and executed through the same
-deterministic replay pipeline, then the tripod-camera critic photographs the
-cut, measures it (flat-field -> ruler-calibrated intensity-to-mm model) and
-schedules corrective passes. Vision only ever sees rendered photographs,
-never simulator state. Proven by fault injection (`uv run python
-vision_demo.py`): with a blade leaving 18% too much hair AND a silently
-missed stripe, the critic measures the bias at 1.186 (injected: 1.18),
-recuts, spot-fixes the stripe, and lands within 0.03 mm of the photo target.
-Corrections are one-directional (too-long only) and judged against a
-rehearsal baseline learned during self-calibration.
+The glove of section 3 is a phone. It streams gravity-referenced pitch and
+roll over UDP at 50 Hz; `pendant.py` maps those to `JOG` rates (tilt ->
+clipper tilt, twist -> around the head, thumb slider -> height) and the
+recorder logs **the arm's encoders**, never the phone's numbers. That is the
+section 3 rule kept intact: the phone is a controller, so its drift is
+absorbed by rate control and the barber's eye, and the saved log is exactly
+where the clipper went.
+
+No camera and no ARKit — an IMU cannot integrate to position without
+drifting metres in seconds, and rate control does not need position.
+
+```
+uv run python teach_phone.py                        # teach on the sim head
+uv run python teach_phone.py --replay out/phone_teach_1.csv
+uv run python teach_phone.py --hardware /dev/ttyACM0
+```
+
+Build instructions for the app are in `phone/README.md`. Two independent
+watchdogs stop the arm if the phone or the laptop goes quiet (250 ms); the
+e-stop stays physical.
 
 ### Hardware path (Pi 4 + Arduino)
 
