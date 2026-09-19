@@ -213,15 +213,25 @@ def serve_viewer(server: TeleopServer, http_port: int) -> ThreadingHTTPServer:
     return httpd
 
 
+def make_config(args) -> TeleopConfig:
+    """Split out so the CLI's mapping onto TeleopConfig is testable: the
+    server tests build TeleopServer directly and would not catch a rename."""
+    return TeleopConfig(scale=args.scale,
+                        yaw_offset_deg=args.yaw_offset,
+                        auto_align=not args.no_auto_align)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--port", type=int, default=DEFAULT_UDP_PORT)
     ap.add_argument("--http-port", type=int, default=DEFAULT_HTTP_PORT)
     ap.add_argument("--hardware", metavar="SERIAL_PORT")
-    ap.add_argument("--phi-scale", type=float, default=200.0,
-                    help="deg of height per metre of phone travel")
-    ap.add_argument("--psi-scale", type=float, default=300.0,
-                    help="deg around the head per metre of phone travel")
+    ap.add_argument("--scale", type=float, default=1.0,
+                    help="hand travel to clipper travel; 1.0 is 1:1")
+    ap.add_argument("--yaw-offset", type=float, default=0.0,
+                    help="trim, in degrees, if left/right feels rotated")
+    ap.add_argument("--no-auto-align", action="store_true",
+                    help="do not point 'forward' at the head on engage")
     args = ap.parse_args(argv)
 
     if args.hardware:
@@ -233,8 +243,7 @@ def main(argv=None) -> int:
     rig.arm.home()
     rig.goto(20.0, 90.0, 15.0)
 
-    cfg = TeleopConfig(phi_deg_per_m=args.phi_scale,
-                       psi_deg_per_m=args.psi_scale)
+    cfg = make_config(args)
     server = TeleopServer(rig, args.port, cfg)
     serve_viewer(server, args.http_port)
 

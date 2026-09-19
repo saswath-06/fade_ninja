@@ -107,3 +107,42 @@ def test_garbage_does_not_crash_the_server(srv):
     settle(srv)
     json.dumps(srv.status_dict())
     assert srv.rejected >= 1
+
+
+# ------------------------------------------------------- the CLI entry point
+
+def test_cli_flags_build_a_valid_config():
+    """Guards the seam the other tests skip: they construct TeleopServer
+    directly, so a renamed TeleopConfig field breaks only `main()`."""
+    import argparse
+
+    import teleop_sim
+    from fadegpt.pose_teleop import TeleopConfig
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--scale", type=float, default=1.0)
+    ap.add_argument("--yaw-offset", type=float, default=0.0)
+    ap.add_argument("--no-auto-align", action="store_true")
+
+    cfg = teleop_sim.make_config(ap.parse_args([]))
+    assert isinstance(cfg, TeleopConfig)
+    assert cfg.scale == 1.0 and cfg.auto_align is True
+
+    cfg = teleop_sim.make_config(
+        ap.parse_args(["--scale", "0.4", "--yaw-offset", "90",
+                       "--no-auto-align"]))
+    assert cfg.scale == 0.4
+    assert cfg.yaw_offset_deg == 90.0
+    assert cfg.auto_align is False
+
+
+def test_module_parses_its_own_arguments():
+    """The real parser, not a stand-in: catches a flag that main() reads but
+    never defines."""
+    import subprocess
+    import sys
+    out = subprocess.run([sys.executable, "teleop_sim.py", "--help"],
+                         capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stderr
+    for flag in ("--scale", "--yaw-offset", "--no-auto-align", "--hardware"):
+        assert flag in out.stdout
