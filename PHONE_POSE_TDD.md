@@ -95,16 +95,17 @@ flowchart LR
 **Pose wire format** (ASCII, one datagram per message):
 
 ```
-START                                    # zero origin; refuse unless tracking normal
+START <track>                              # track 0=normal required
 POSE <t_ms> <x_m> <y_m> <z_m> <qw> <qx> <qy> <qz> <track>
 STOP
-STATUS                                   # request/response over a side channel or reply datagram
+STATUS                                     # request/response reply datagram
 ```
 
-- `track`: `0` = normal, `1` = limited, `2` = relocalizing (or equivalent). `START` / motion only when `track == 0`.
+- `track`: `0` = normal, `1` = limited, `2` = relocalizing. `START` / motion only when `track == 0`.
 - Camera frames are never sent.
 - Port **UDP `:8463`**. Leave TCP `:8462` (virtual ESP32) and UDP `:8470` (rate pendant) alone.
 - New joint names: **`q1..q4`**. Do not overload rail `phi/psi/theta` in the pose path.
+- Server ACKs every datagram; the phone may ignore replies.
 
 **Keep (parallel, not deleted):** teach/replay/profile, rail sim (`head.py`, `cutting.py`, …), `server.py`, rate pendant — the **rail + JOG** product path stays. Pose/EEZY is additive.
 
@@ -283,10 +284,108 @@ Measure link lengths and decide servo class **before** live torque. MG90S / publ
 - **Servo class** (MG90S vs MG995/MG996R-class on shoulder) — measure before Phase 7.
 - **Stock gripper servo** — unused, removed, or replaced by the q4 tilt servo?
 - **Rail simulator body** (`head.py`, `cutting.py`, `profile.py`, ~75 tests) — kept parallel for the pendant/JOG product; retargeting to EEZY is out of step 1.
-- **Link lengths** — ship T2.0 published defaults; remeasure after print and update constants + hand FK ground truth together.
+- **Link lengths** — ship T2.0 published defaults; remeasure after print and update constants + hand FK ground truth together. Remeasurement **invalidates** the current envelope / `Q_HOME` numbers (see Fix pass Edit 4).
 
 ---
 
-## Implementation order
+## Implementation order (original Step 1)
 
-One phase at a time, tests first, stop at each checkpoint for pass/fail. Start at Phase 0.
+Phases 0→7 are **implemented on main** (protocol, IK, mapper, server, sim, FadePose sources, dry-run servos). Tests: ~109 green. `fake_phone --circle` drives the sim.
+
+That path is **not** a working phone demo yet. The audit below is the next work.
+
+---
+
+## Fix pass (post-Step-1 audit) — next execution
+
+Honest status: the **protocol/IK/sim stack works with `fake_phone`**. The ARKit app **cannot Start today** — permanent deadlock, not a flaky first try. Watchdog freeze is **lazy** (only when STATUS/WS polls). Home pose leaves almost no forward reach. Apply these in order.
+
+### Known blockers (verified) — **fixed in Fix pass**
+
+1. ~~**Start deadlock**~~ — Fixed: AR session runs on appear; Start enabled only when tracking is normal; START+origin on first normal frame.
+2. ~~**Server START gate vacuous**~~ — Fixed: wire is `START <track>`; non-zero rejected.
+3. ~~**Watchdog only on poll**~~ — Fixed: 20 Hz timer thread calls `hardware.freeze()` with no STATUS/WS.
+4. ~~**`Q_HOME` at ~87% extension**~~ — Fixed: home at `(0, 45, -90)` ≈ 113 mm reach with envelope test.
+5. ~~**`fake_phone` blocking RPC**~~ — Fixed: fire-and-forget; STATUS on separate socket; `--vertical` / `--sweep` / `--drop` / `--track`.
+6. ~~**No in-repo Xcode project**~~ — Fixed: `ios/FadePose/project.yml` (XcodeGen).
+
+### Validation checklist (Edit 6)
+
+```bash
+uv run python pose_server.py --host 0.0.0.0
+uv run python tools/fake_phone.py --circle 0.05          # tip path in sim
+uv run python tools/fake_phone.py --vertical 0.04        # tip Z / q2,q3 move
+uv run python tools/fake_phone.py --sweep 0.25           # reachable=false
+# kill fake_phone, leave browser closed — hardware dry-run freezes within 250 ms
+uv run python tools/fake_phone.py --track 1              # START rejected
+```
+
+On device (after `xcodegen generate` in `ios/FadePose/`): 10 cm table move ≈ STATUS Δ ±2 cm; tilt → q4 only.
+
+
+### Edit 1 — ARKit lifecycle (do first)
+
+In `ios/FadePose/ContentView.swift`:
+
+- `startSession()` from `.onAppear` — run `ARWorldTrackingConfiguration` / gravity immediately (not tied to UDP Connect; UDP is connectionless).
+- `session.delegateQueue = .main`.
+- Update `trackingLabel` **above** any `streaming` guard.
+- Start button enabled only when tracking is `normal`.
+- Send `START` only after a `.normal` frame; capture origin on that same frame.
+- Map ARKit `.limited(.relocalizing)` → track code `2` (or drop code 2 from the wire spec — pick one: **implement code 2**).
+
+### Edit 2 — Server enforces START gate
+
+- Wire: `START <track>` (or require a recent normal POSE within 250 ms).
+- Delete hardcoded `TRACK_NORMAL` on START.
+- Test: START with track≠0 → `ERR`.
+
+### Edit 3 — Watchdog timer thread
+
+- 20 Hz timer in `PoseServer` evaluates staleness and calls `hardware.freeze()` with **no** STATUS/WS client.
+- `status_dict()` is a pure read.
+- Test: freeze fires with no STATUS and no WS.
+
+### Edit 4 — Re-center `Q_HOME`
+
+- Home near workspace centroid (~110 mm radius, not 138.6 mm).
+- Recompute hand-derived `P_HOME`; update T2.0/T2.1.
+- Test: envelope around home roughly symmetric on X within tolerance.
+- Document max phone travel at scale 0.3 before `reachable=false`.
+
+### Edit 5 — Fire-and-forget `fake_phone`
+
+- No per-datagram `recvfrom`; STATUS on a separate socket ~0.5 s.
+- Add `--vertical`, `--sweep` (hit +X limit), `--drop N`, `--track` for degraded states.
+- Fix help text: circle is **ARKit XZ** (not XY).
+
+### Edit 6 — Validation checklist (replace Step C)
+
+1. fake_phone circle → tip path in sim  
+2. `--vertical` → tip Z / q2,q3 move  
+3. `--sweep` forward → `reachable=false` before phone runs out of table  
+4. Watchdog fires with **browser closed**  
+5. START refused while tracking limited  
+6. On-device: 10 cm table move ≈ STATUS Δ ±2 cm  
+7. Tilt → q4 only  
+
+### Edit 7 — Xcode project is Step A work
+
+- Add `ios/FadePose/project.yml` (XcodeGen) **or** a checked-in `.xcodeproj`, plus one runbook line in `ios/FadePose/README.md`.
+- Treat missing project as a **hard gate**, not a parenthetical.
+
+### Edit 8 — Small fixes
+
+- `serve_sim` honors `--host`  
+- WS branch returns unconditionally (no HTTP write on upgraded socket)  
+- Doc: server ACKs every datagram (phone may ignore)  
+- Track code 2 implemented (Edit 1) or removed from protocol — do not leave dead  
+
+### Edit 9 — Doc honesty
+
+- State plainly: **Start can never succeed today; `session.run()` is never reached.**  
+- Note: measuring real link lengths (Step D) invalidates current envelope numbers.
+
+### Execution order when approved
+
+**1 → 3 first** (demo-blocking), then **4 → 5 → 6**, then **7 → 8 → 9** (repro + polish). Tests first where applicable; push when green.

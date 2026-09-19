@@ -1,7 +1,8 @@
-"""UDP pose teleop server (PHONE_POSE_TDD Phase 4).
+"""UDP pose teleop server (PHONE_POSE_TDD Phase 4 + Fix pass).
 
 Listens for ARKit POSE datagrams, runs PoseMapper, replies to STATUS,
-and optionally serves tools/eezy_sim.html over a tiny HTTP+WS port.
+runs a dedicated 20 Hz watchdog (independent of browser polling), and
+serves tools/eezy_sim.html over a tiny HTTP+WS port.
 """
 from __future__ import annotations
 
@@ -17,8 +18,6 @@ from fadegpt.eezy_servos import ServoDriver
 from fadegpt.pendant import local_ip
 from fadegpt.pose_mapper import PoseMapper
 from fadegpt.pose_protocol import (
-    TRACK_NORMAL,
-    PoseMessage,
     PoseProtocolError,
     PoseSession,
     parse_message,
@@ -26,6 +25,7 @@ from fadegpt.pose_protocol import (
 
 DEFAULT_PORT = 8463
 WATCHDOG_S = 0.25
+WATCHDOG_HZ = 20.0
 SIM_HTTP_PORT = 8464
 SIM_PAGE = Path(__file__).parent / "tools" / "eezy_sim.html"
 
@@ -41,24 +41,31 @@ class PoseServer:
         self._lock = threading.Lock()
         self._last_pose_mono = 0.0
         self._mode = "idle"
+        self._stale = False
         self._running = False
         self._sock: socket.socket | None = None
         self.received = 0
+        self.watchdog_freezes = 0
 
     # ------------------------------------------------------------- state
 
-    def status_dict(self) -> dict:
+    def _eval_watchdog(self) -> None:
+        """Called by the timer thread — never depends on STATUS/WS clients."""
         with self._lock:
-            st = self.mapper.state()
             stale = (self._mode == "tracking"
                      and (time.monotonic() - self._last_pose_mono) > WATCHDOG_S)
-            if stale and self._mode == "tracking":
-                # hold joints; hardware zeroes commands
-                if self.hardware is not None:
-                    self.hardware.freeze()
+            self._stale = stale
+            if stale and self.hardware is not None and not self.hardware.frozen:
+                self.hardware.freeze()
+                self.watchdog_freezes += 1
+
+    def status_dict(self) -> dict:
+        """Pure read of current state (no side effects)."""
+        with self._lock:
+            st = self.mapper.state()
             return {
-                "mode": "stale" if stale else self._mode,
-                "stale": stale,
+                "mode": "stale" if self._stale else self._mode,
+                "stale": self._stale,
                 "started": self.session.started,
                 "q1": st.q1, "q2": st.q2, "q3": st.q3, "q4": st.q4,
                 "x": st.tip_x, "y": st.tip_y, "z": st.tip_z,
@@ -79,18 +86,20 @@ class PoseServer:
 
         try:
             if msg.kind == "START":
-                # START itself carries no track field; require caller to have
-                # recently proven normal tracking via a POSE, or pass normal
-                # explicitly when the datagram is START alone after app checks.
-                ack = self.session.handle(msg, track=TRACK_NORMAL)
+                # Track comes from the wire: START <track>
+                ack = self.session.handle(msg)
                 self.mapper.reset()
-                self._mode = "tracking"
-                self._last_pose_mono = time.monotonic()
+                with self._lock:
+                    self._mode = "tracking"
+                    self._stale = False
+                    self._last_pose_mono = time.monotonic()
                 return ack
 
             if msg.kind == "STOP":
                 ack = self.session.handle(msg)
-                self._mode = "idle"
+                with self._lock:
+                    self._mode = "idle"
+                    self._stale = False
                 if self.hardware is not None:
                     self.hardware.freeze()
                 return ack
@@ -99,6 +108,7 @@ class PoseServer:
             ack = self.session.handle(msg)
             with self._lock:
                 self._last_pose_mono = time.monotonic()
+                self._stale = False
                 st = self.mapper.update(self.session.relative)
                 self.received += 1
                 if self.hardware is not None:
@@ -107,7 +117,7 @@ class PoseServer:
         except PoseProtocolError as e:
             return f"ERR {e}"
 
-    # ------------------------------------------------------------- UDP loop
+    # ------------------------------------------------------------- loops
 
     def start(self) -> None:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -117,6 +127,13 @@ class PoseServer:
         self._sock = sock
         self._running = True
         threading.Thread(target=self._udp_loop, daemon=True).start()
+        threading.Thread(target=self._watchdog_loop, daemon=True).start()
+
+    def _watchdog_loop(self) -> None:
+        period = 1.0 / WATCHDOG_HZ
+        while self._running:
+            self._eval_watchdog()
+            time.sleep(period)
 
     def _udp_loop(self) -> None:
         assert self._sock is not None
@@ -131,8 +148,6 @@ class PoseServer:
                 line = data.decode("utf-8", "replace").strip()
             except Exception:
                 continue
-            # Newest-only: process this datagram immediately (UDP has no queue
-            # in our app layer beyond the OS buffer).
             reply = self.handle_line(line)
             try:
                 self._sock.sendto(reply.encode(), addr)
@@ -163,7 +178,8 @@ def _ws_send_text(conn: socket.socket, text: str) -> None:
     conn.sendall(header + payload)
 
 
-def serve_sim(server: PoseServer, http_port: int = SIM_HTTP_PORT) -> ThreadingHTTPServer:
+def serve_sim(server: PoseServer, http_port: int = SIM_HTTP_PORT,
+              host: str = "0.0.0.0") -> ThreadingHTTPServer:
     page = SIM_PAGE.read_text() if SIM_PAGE.exists() else "<h1>missing eezy_sim.html</h1>"
     pose_ref = server
 
@@ -172,7 +188,9 @@ def serve_sim(server: PoseServer, http_port: int = SIM_HTTP_PORT) -> ThreadingHT
             pass
 
         def do_GET(self):
-            if self.path.startswith("/ws") or self.headers.get("Upgrade", "").lower() == "websocket":
+            is_ws = (self.path.startswith("/ws")
+                     or self.headers.get("Upgrade", "").lower() == "websocket")
+            if is_ws:
                 key = None
                 for k, v in self.headers.items():
                     if k.lower() == "sec-websocket-key":
@@ -191,8 +209,9 @@ def serve_sim(server: PoseServer, http_port: int = SIM_HTTP_PORT) -> ThreadingHT
                     while True:
                         _ws_send_text(conn, json.dumps(pose_ref.status_dict()))
                         time.sleep(0.05)
-                except OSError:
-                    return
+                except Exception:
+                    pass
+                return  # never fall through to HTTP page write
 
             body = page.encode()
             self.send_response(200)
@@ -201,7 +220,7 @@ def serve_sim(server: PoseServer, http_port: int = SIM_HTTP_PORT) -> ThreadingHT
             self.end_headers()
             self.wfile.write(body)
 
-    httpd = ThreadingHTTPServer(("0.0.0.0", http_port), Handler)
+    httpd = ThreadingHTTPServer((host, http_port), Handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd
 
@@ -225,10 +244,11 @@ def main(argv: list[str] | None = None) -> None:
     srv = PoseServer(host=args.host, port=args.port, scale=args.scale,
                      hardware=hw)
     srv.start()
-    httpd = serve_sim(srv, args.http_port)
+    httpd = serve_sim(srv, args.http_port, host=args.host)
     print(f"Pose UDP  udp://{local_ip()}:{args.port}")
     print(f"Sim UI    http://{local_ip()}:{args.http_port}/")
-    print("Send START then POSE… from ios/FadePose or tools/fake_phone.py")
+    print("Send START <track> then POSE… from ios/FadePose or tools/fake_phone.py")
+    print("(Server ACKs every datagram; the phone may ignore replies.)")
     try:
         while True:
             time.sleep(1)
