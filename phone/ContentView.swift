@@ -12,6 +12,7 @@
 //      PEND <seq> <t_ms> <pitch> <roll> <slider> <cut><rec>
 
 import SwiftUI
+import UIKit
 import CoreMotion
 import Network
 
