@@ -115,12 +115,12 @@
         <video id="video" playsinline muted></video>
         <div id="videoDot"></div>
       </div>
-      <p id="camHint">Hold any brightly colored object (marker cap, sticky note),
-      then <b>click it in the video</b> to lock on. The object becomes the clipper;
-      <kbd style="font-family:'IBM Plex Mono',monospace">space</kbd> runs the motor.
-      If the camera is blocked here, run the game from the repo:
+      <p id="camHint"><b>Point with your index finger</b> to aim the clipper;
+      <b>pinch thumb-to-index</b> to run the motor. Full skeletal hand tracking
+      loads on localhost; on this page it may fall back to marker mode (click a
+      colored object in the video to lock it instead). To run locally:
       <span style="font-family:'IBM Plex Mono',monospace">python3 -m http.server 8123</span>
-      &rarr; localhost:8123/barber_game.html</p>
+      in the repo &rarr; localhost:8123/barber_game.html</p>
     </div>
 
     <div class="card">
@@ -203,11 +203,17 @@
   texCanvas.width = W; texCanvas.height = H;
   const tctx = texCanvas.getContext("2d");
   const SKIN = [214, 172, 138], HAIR_DARK = [38, 31, 27];
+  // static per-cell grain so hair reads as texture, not flat paint
+  const grain = new Float32Array(W * H);
+  for (let i = 0; i < grain.length; i++) grain[i] = 0.90 + Math.random() * 0.2;
   function cellColor(x, y) {
     const u = (x + 0.5) / W, v = (y + 0.5) / H;
     if (!hasHair(u, v)) return SKIN;
-    const t = Math.pow(Math.min(hair[y * W + x], HAIR0) / HAIR0, 0.5);
-    return [0, 1, 2].map(i => Math.round(SKIN[i] + (HAIR_DARK[i] - SKIN[i]) * t));
+    const k = y * W + x;
+    const t = Math.pow(Math.min(hair[k], HAIR0) / HAIR0, 0.5);
+    const g = 1 + (grain[k] - 1) * (0.3 + 0.7 * t);   // grain grows with length
+    return [0, 1, 2].map(i =>
+      Math.min(255, Math.round((SKIN[i] + (HAIR_DARK[i] - SKIN[i]) * t) * g)));
   }
   function paintRect(x0, y0, x1, y1) {
     for (let y = y0; y <= y1; y++)
@@ -219,13 +225,30 @@
   }
   function paintFace() {  // simple features so it reads as a person
     const cx = FACE_U * W, cy = 0.44 * H;
-    tctx.fillStyle = "#5a4636";
-    tctx.beginPath(); tctx.ellipse(cx - 22, cy - 8, 5, 3, 0, 0, 7); tctx.fill();
-    tctx.beginPath(); tctx.ellipse(cx + 22, cy - 8, 5, 3, 0, 0, 7); tctx.fill();
-    tctx.strokeStyle = "#b07a5a"; tctx.lineWidth = 2;
-    tctx.beginPath(); tctx.moveTo(cx - 3, cy + 2); tctx.quadraticCurveTo(cx, cy + 10, cx + 3, cy + 2); tctx.stroke();
-    tctx.strokeStyle = "#8a5c42";
-    tctx.beginPath(); tctx.moveTo(cx - 10, cy + 22); tctx.quadraticCurveTo(cx, cy + 27, cx + 10, cy + 22); tctx.stroke();
+    // brows
+    tctx.strokeStyle = "#4a3a2c"; tctx.lineWidth = 3; tctx.lineCap = "round";
+    tctx.beginPath(); tctx.moveTo(cx - 30, cy - 16); tctx.quadraticCurveTo(cx - 22, cy - 20, cx - 13, cy - 17); tctx.stroke();
+    tctx.beginPath(); tctx.moveTo(cx + 13, cy - 17); tctx.quadraticCurveTo(cx + 22, cy - 20, cx + 30, cy - 16); tctx.stroke();
+    // eyes: whites + iris + pupil
+    for (const s of [-1, 1]) {
+      tctx.fillStyle = "#f3ede4";
+      tctx.beginPath(); tctx.ellipse(cx + s * 21, cy - 7, 7.5, 4.5, 0, 0, 7); tctx.fill();
+      tctx.fillStyle = "#5b4633";
+      tctx.beginPath(); tctx.arc(cx + s * 21, cy - 7, 3.4, 0, 7); tctx.fill();
+      tctx.fillStyle = "#20180f";
+      tctx.beginPath(); tctx.arc(cx + s * 21, cy - 7, 1.6, 0, 7); tctx.fill();
+    }
+    // nose shadow + mouth
+    tctx.strokeStyle = "#c09068"; tctx.lineWidth = 2;
+    tctx.beginPath(); tctx.moveTo(cx - 4, cy + 8); tctx.quadraticCurveTo(cx, cy + 12, cx + 4, cy + 8); tctx.stroke();
+    tctx.strokeStyle = "#9c6a4c"; tctx.lineWidth = 2.5;
+    tctx.beginPath(); tctx.moveTo(cx - 11, cy + 24); tctx.quadraticCurveTo(cx, cy + 30, cx + 11, cy + 24); tctx.stroke();
+    // a little sideburn edge so the hairline reads deliberate
+    tctx.strokeStyle = "#2a221c"; tctx.lineWidth = 1.5;
+    tctx.beginPath(); tctx.moveTo(cx - FACE_HALF * W + 2, cy - 24);
+    tctx.lineTo(cx - FACE_HALF * W + 2, cy + 14); tctx.stroke();
+    tctx.beginPath(); tctx.moveTo(cx + FACE_HALF * W - 2, cy - 24);
+    tctx.lineTo(cx + FACE_HALF * W - 2, cy + 14); tctx.stroke();
   }
   function repaintAll() { paintRect(0, 0, W - 1, H - 1); paintFace(); texture.needsUpdate = true; }
 
@@ -246,11 +269,13 @@
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x101216);
   const camera = new THREE.PerspectiveCamera(42, 1, 0.05, 40);
-  scene.add(new THREE.HemisphereLight(0xdfe8f2, 0x22262c, 0.95));
-  const key = new THREE.DirectionalLight(0xffffff, 0.7);
-  key.position.set(2, 3, -2); scene.add(key);
-  const fill = new THREE.DirectionalLight(0x9db8d6, 0.35);
-  fill.position.set(-2, 1, 2); scene.add(fill);
+  scene.add(new THREE.HemisphereLight(0xdfe8f2, 0x1d2126, 0.8));
+  const key = new THREE.DirectionalLight(0xfff2e0, 0.8);
+  key.position.set(2.5, 3, -2); scene.add(key);
+  const fill = new THREE.DirectionalLight(0x9db8d6, 0.25);
+  fill.position.set(-2.5, 0.5, -1); scene.add(fill);
+  const rim = new THREE.DirectionalLight(0xbcd2ec, 0.45);
+  rim.position.set(0, 2, 3); scene.add(rim);
 
   const texture = new THREE.CanvasTexture(texCanvas);
   texture.magFilter = THREE.LinearFilter;
@@ -260,30 +285,55 @@
   const head = new THREE.Mesh(headGeo,
     new THREE.MeshStandardMaterial({ map: texture, roughness: 0.85, metalness: 0.0 }));
   scene.add(head);
-  // neck + shoulders so it sits in a chair
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.42, 0.7, 24),
-    new THREE.MeshStandardMaterial({ color: 0xd6ac8a, roughness: 0.9 }));
+  const skinMat = new THREE.MeshStandardMaterial({ color: 0xd6ac8a, roughness: 0.88 });
+  // ears on +-x, nose on +z (where the texture's face is)
+  for (const side of [-1, 1]) {
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.17, 20, 16), skinMat);
+    ear.scale.set(0.35, 1.0, 0.62);
+    ear.position.set(side * 0.85, -0.08, 0.06);
+    scene.add(ear);
+  }
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.13, 20, 16), skinMat);
+  nose.scale.set(0.6, 0.8, 0.6);
+  nose.position.set(0, -0.16, 0.9);
+  scene.add(nose);
+  // neck + cape so it sits in a chair
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.4, 0.7, 24), skinMat);
   neck.position.y = -1.15; scene.add(neck);
-  const cape = new THREE.Mesh(new THREE.ConeGeometry(1.5, 1.6, 32, 1, true),
+  const cape = new THREE.Mesh(new THREE.ConeGeometry(1.5, 1.6, 48, 1, true),
     new THREE.MeshStandardMaterial({ color: 0x2e3640, roughness: 0.95, side: THREE.DoubleSide }));
   cape.position.y = -2.05; scene.add(cape);
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.07, 12, 32),
+    new THREE.MeshStandardMaterial({ color: 0x3a444f, roughness: 0.9 }));
+  collar.rotation.x = Math.PI / 2; collar.position.y = -1.28; scene.add(collar);
+  const shadow = new THREE.Mesh(new THREE.CircleGeometry(1.9, 40),
+    new THREE.MeshBasicMaterial({ color: 0x0a0c0f, transparent: true, opacity: 0.5 }));
+  shadow.rotation.x = -Math.PI / 2; shadow.position.y = -2.86; scene.add(shadow);
 
-  // clipper
+  // clipper: taper-bodied clippers with a steel comb blade
   const clipper = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.26, 0.9),
-    new THREE.MeshStandardMaterial({ color: 0x30363e, roughness: 0.6, metalness: 0.3 }));
-  body.position.z = 0.55; clipper.add(body);
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.16),
-    new THREE.MeshStandardMaterial({ color: 0xaeb9c4, roughness: 0.3, metalness: 0.8 }));
-  blade.position.z = 0.08; clipper.add(blade);
-  const led = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 12),
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2b313a, roughness: 0.45, metalness: 0.35 });
+  const steelMat = new THREE.MeshStandardMaterial({ color: 0xb9c2cc, roughness: 0.22, metalness: 0.85 });
+  const teethMat = new THREE.MeshStandardMaterial({ color: 0x171a1f, roughness: 0.4, metalness: 0.6 });
+  const bodyFront = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.2, 0.5), bodyMat);
+  bodyFront.position.z = 0.36; clipper.add(bodyFront);
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.17, 0.48), bodyMat);
+  grip.position.set(0, 0.01, 0.82); grip.rotation.x = -0.08; clipper.add(grip);
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.16), steelMat);
+  blade.position.z = 0.06; clipper.add(blade);
+  for (let i = 0; i < 9; i++) {          // comb teeth along the cutting edge
+    const t = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.09, 0.08), teethMat);
+    t.position.set(-0.22 + i * 0.055, 0, -0.03);
+    clipper.add(t);
+  }
+  const led = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 12),
     new THREE.MeshStandardMaterial({ color: 0x552222, emissive: 0x000000 }));
-  led.position.set(0.16, 0.16, 0.8); clipper.add(led);
+  led.position.set(0.15, 0.13, 0.62); clipper.add(led);
   clipper.visible = false; scene.add(clipper);
 
   // ------------------------------------------------------------- game state
   let theta = 15, motor = false, camMode = false;
-  let azim = Math.PI, elev = 0.15, dist = 3.1;   // start behind the chair
+  let azim = Math.PI, elev = 0.12, dist = 2.7;   // start behind the chair
   const pointer = new THREE.Vector2(0, 0);
   let havePointer = false;
   const raycaster = new THREE.Raycaster();
@@ -422,66 +472,142 @@
   });
   $("targetSel").addEventListener("change", () => { mapDirty = true; });
 
-  // --------------------------------------------------- webcam color tracker
+  // -------------------- hand tracking: MediaPipe skeleton, else color marker
+  // MediaPipe fetches its model at runtime; the artifact sandbox blocks that,
+  // localhost doesn't. So: try real hand tracking, fall back to marker mode.
   const video = $("video"), vDot = $("videoDot");
-  const grab = document.createElement("canvas"); grab.width = 160; grab.height = 120;
+  const grab = document.createElement("canvas"); grab.width = 192; grab.height = 144;
   const gctx = grab.getContext("2d", { willReadFrequently: true });
-  let lock = null, smooth = null;
+  let lock = null, smooth = null, stream = null;
+  let mpHands = null, mpBusy = false, pinch = false;
+  const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+
+  function adaptiveSmooth(cur) {
+    // heavy smoothing for tremor, fast follow for real moves (one-euro-ish)
+    if (!smooth) { smooth = cur; return; }
+    const d = Math.hypot(cur[0] - smooth[0], cur[1] - smooth[1]);
+    const a = clamp(d * 16, 0.12, 0.9);
+    smooth = [smooth[0] + (cur[0] - smooth[0]) * a,
+              smooth[1] + (cur[1] - smooth[1]) * a];
+  }
+  function pointTo(nx, ny) {          // nx, ny: camera space 0..1, unmirrored
+    adaptiveSmooth([nx, ny]);
+    const mx = 1 - smooth[0];         // mirror to match the preview
+    pointer.x = clamp((mx - 0.5) / 0.30, -1, 1);   // central 60% -> full reach
+    pointer.y = clamp(-(smooth[1] - 0.48) / 0.26, -1, 1);
+    havePointer = true;
+    const r = $("videoWrap").getBoundingClientRect();
+    vDot.style.display = "block";
+    vDot.style.left = (mx * r.width) + "px";
+    vDot.style.top = (smooth[1] * r.height) + "px";
+  }
+
+  const loadScript = src => new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s);
+  });
+  const withTimeout = (p, ms) => Promise.race([p,
+    new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
+
+  function onHandResults(res) {
+    const lm = res.multiHandLandmarks && res.multiHandLandmarks[0];
+    if (!lm) {
+      vDot.style.display = "none";
+      if (pinch) { pinch = false; setMotor(false); }
+      return;
+    }
+    pointTo(lm[8].x, lm[8].y);        // index fingertip carries the clipper
+    const d = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
+    const isPinch = d < 0.065;        // thumb-to-index pinch = motor
+    if (isPinch !== pinch) { pinch = isPinch; setMotor(isPinch); }
+    vDot.style.borderColor = isPinch ? "#d94f4f" : "#6ea8dc";
+  }
+
+  async function tryMediaPipe() {
+    const base = "https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240";
+    await loadScript(base + "/hands.js");
+    const hands = new window.Hands({ locateFile: f => `${base}/${f}` });
+    hands.setOptions({ maxNumHands: 1, modelComplexity: 0,
+                       minDetectionConfidence: 0.6, minTrackingConfidence: 0.5 });
+    hands.onResults(onHandResults);
+    await withTimeout(hands.send({ image: video }), 9000); // pulls the model
+    mpHands = hands;
+  }
+
   $("camBtn").addEventListener("click", async () => {
-    if (camMode) { camMode = false; $("camState").textContent = "off — using mouse"; return; }
+    if (camMode) {
+      camMode = false; mpHands = null;
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      $("videoWrap").hidden = true;
+      $("camState").textContent = "off — using mouse";
+      $("camBtn").textContent = "Enable camera";
+      return;
+    }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(
-        { video: { width: 320, height: 240 } });
+      stream = await navigator.mediaDevices.getUserMedia(
+        { video: { width: 640, height: 480 } });
       video.srcObject = stream; await video.play();
       $("videoWrap").hidden = false;
-      $("camState").textContent = "on — click your object to lock";
+      $("camBtn").textContent = "Stop camera";
       camMode = true;
+      $("camState").textContent = "loading hand model…";
+      try {
+        await tryMediaPipe();
+        $("camState").textContent = "hand locked — point to aim, pinch to cut";
+      } catch (err) {
+        $("camState").textContent =
+          "marker mode — click a colored object in the video to lock " +
+          "(full hand tracking works on localhost)";
+      }
     } catch (err) {
       $("camState").textContent = "camera blocked here — run on localhost (see below)";
     }
   });
+
   $("videoWrap").addEventListener("click", e => {
+    if (mpHands) return;              // skeleton mode needs no color lock
     const r = $("videoWrap").getBoundingClientRect();
     const nx = 1 - (e.clientX - r.left) / r.width;    // display is mirrored
     const ny = (e.clientY - r.top) / r.height;
     gctx.drawImage(video, 0, 0, grab.width, grab.height);
-    const px = gctx.getImageData(Math.floor(nx * grab.width) - 2,
-                                 Math.floor(ny * grab.height) - 2, 5, 5).data;
+    const px = gctx.getImageData(
+      clamp(Math.floor(nx * grab.width) - 3, 0, grab.width - 7),
+      clamp(Math.floor(ny * grab.height) - 3, 0, grab.height - 7), 7, 7).data;
     let rr = 0, gg = 0, bb = 0;
     for (let i = 0; i < px.length; i += 4) { rr += px[i]; gg += px[i+1]; bb += px[i+2]; }
     const nsum = px.length / 4;
     lock = [rr / nsum, gg / nsum, bb / nsum];
+    smooth = null;
     $("lockChip").style.background = `rgb(${lock.map(Math.round).join(",")})`;
-    $("camState").textContent = "locked — move the object to cut";
+    $("camState").textContent = "locked — move the object to aim, space to cut";
   });
+
   function trackFrame() {
-    if (!camMode || !lock || video.readyState < 2) return;
+    if (!camMode || video.readyState < 2) return;
+    if (mpHands) {                     // skeleton path
+      if (!mpBusy) {
+        mpBusy = true;
+        mpHands.send({ image: video }).catch(() => {}).finally(() => { mpBusy = false; });
+      }
+      return;
+    }
+    if (!lock) return;                 // marker path
     gctx.drawImage(video, 0, 0, grab.width, grab.height);
     const d = gctx.getImageData(0, 0, grab.width, grab.height).data;
     const ls = lock[0] + lock[1] + lock[2] + 1;
     const lr = lock[0] / ls, lg = lock[1] / ls;
-    let sx = 0, sy = 0, n = 0;
+    let sx = 0, sy = 0, wsum = 0;
     for (let y = 0; y < grab.height; y += 2)
       for (let x = 0; x < grab.width; x += 2) {
         const p = (y * grab.width + x) * 4;
         const s = d[p] + d[p+1] + d[p+2] + 1;
-        if (s < 90) continue;                          // too dark to trust hue
+        if (s < 90) continue;
         const dr = d[p] / s - lr, dg = d[p+1] / s - lg;
-        if (dr * dr + dg * dg < 0.004) { sx += x; sy += y; n++; }
+        const q = 0.006 - (dr * dr + dg * dg);         // closeness-weighted
+        if (q > 0) { sx += x * q; sy += y * q; wsum += q; }
       }
-    if (n > 20) {
-      const cx = sx / n / grab.width, cy = sy / n / grab.height;
-      smooth = smooth ? [smooth[0] * 0.6 + cx * 0.4, smooth[1] * 0.6 + cy * 0.4] : [cx, cy];
-      // mirrored x; central 80% of frame maps to full screen
-      const mx = 1 - smooth[0];
-      pointer.x = Math.min(1, Math.max(-1, (mx - 0.5) / 0.4));
-      pointer.y = Math.min(1, Math.max(-1, -(smooth[1] - 0.5) / 0.35));
-      havePointer = true;
-      const r = $("videoWrap").getBoundingClientRect();
-      vDot.style.display = "block";
-      vDot.style.left = (mx * r.width) + "px";
-      vDot.style.top = (smooth[1] * r.height) + "px";
-    } else vDot.style.display = "none";
+    if (wsum > 0.06) pointTo(sx / wsum / grab.width, sy / wsum / grab.height);
+    else vDot.style.display = "none";
   }
 
   // ------------------------------------------------------------- main loop
