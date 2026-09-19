@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Fade Pendant</title>
+<style>
+  :root { --ground:#141618; --panel:#1e2228; --panel2:#272d35; --ink:#eef1f4;
+          --muted:#98a1ab; --line:#333a44; --red:#d94f4f; --steel:#6ea8dc; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; overscroll-behavior: none; }
+  body {
+    background: var(--ground); color: var(--ink);
+    font: 14px/1.4 -apple-system, "Helvetica Neue", sans-serif;
+    padding: max(10px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 10px;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+  }
+  header { display: flex; align-items: center; gap: 10px; }
+  h1 { font-size: 17px; font-weight: 800; margin: 0; letter-spacing: 0.02em; }
+  #state { font: 11px ui-monospace, Menlo, monospace; color: var(--muted); flex: 1; }
+  #state.ok { color: #58b368; }
+  #state.bad { color: var(--red); }
+  button { font: inherit; color: var(--ink); background: var(--panel);
+           border: 1px solid var(--line); border-radius: 10px; padding: 12px;
+           font-weight: 600; }
+  button:disabled { opacity: 0.4; }
+  #go { background: var(--steel); border-color: var(--steel); color: #08233f;
+        font-weight: 800; padding: 16px; font-size: 16px; }
+  .readouts { display: flex; gap: 8px; }
+  .ro { flex: 1; background: var(--panel); border: 1px solid var(--line);
+        border-radius: 11px; padding: 10px 12px; }
+  .ro b { display: block; font-size: 9.5px; letter-spacing: 0.09em; color: var(--muted); }
+  .ro span { font: 500 27px ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
+  .ro i { font-style: normal; font-size: 9.5px; color: var(--muted); }
+  .mid { flex: 1; display: flex; gap: 14px; min-height: 150px; }
+  .col { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+  #rec.on { background: rgba(217,79,79,0.22); border-color: var(--red); }
+  #dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+         background: var(--muted); margin-right: 6px; vertical-align: -1px; }
+  #rec.on #dot { background: var(--red); }
+  #slider { width: 78px; background: var(--panel); border: 1px solid var(--line);
+            border-radius: 39px; position: relative; overflow: hidden; }
+  #knob { position: absolute; left: 50%; width: 56px; height: 56px; margin-left: -28px;
+          border-radius: 50%; background: #5a6470; transition: background 0.15s; }
+  #knob.live { background: var(--steel); }
+  #slider::after { content: ""; position: absolute; left: 14px; right: 14px; top: 50%;
+                   height: 1px; background: rgba(255,255,255,0.18); }
+  #sliderLabel { text-align: center; font-size: 9.5px; letter-spacing: 0.09em;
+                 color: var(--muted); }
+  #cut { padding: 30px; font-size: 18px; font-weight: 800; border-radius: 16px; }
+  #cut.on { background: var(--red); border-color: var(--red); color: #fff; }
+  .setup { background: var(--panel); border: 1px solid var(--line);
+           border-radius: 11px; padding: 14px; font-size: 13px; color: var(--muted); }
+  .setup p { margin: 0 0 10px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>FADE PENDANT</h1>
+  <span id="state">tap Start to allow motion</span>
+</header>
+
+<div id="setup" class="setup">
+  <p>Hold the phone the way you'd hold clippers, then tap <b>Start</b>.
+  iOS will ask permission to use motion sensors — allow it.</p>
+  <button id="go">Start</button>
+</div>
+
+<div id="app" style="display:none; flex:1; flex-direction:column; gap:10px">
+  <div class="readouts">
+    <div class="ro"><b>TILT</b><span id="pOut">+0°</span><i>clipper / length</i></div>
+    <div class="ro"><b>TWIST</b><span id="rOut">+0°</span><i>around head</i></div>
+  </div>
+
+  <div class="mid">
+    <div class="col">
+      <button id="center">RECENTER</button>
+      <button id="rec"><span id="dot"></span><span id="recLabel">RECORD</span></button>
+      <div id="sliderLabel">HEIGHT →</div>
+    </div>
+    <div id="slider"><div id="knob"></div></div>
+  </div>
+
+  <button id="cut">HOLD TO CUT</button>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+
+  let pitch = 0, roll = 0, slider = 0, cutting = false, recording = false;
+  let ref = null, seq = 0, ws = null, t0 = 0, started = false;
+
+  function setState(text, cls) { $("state").textContent = text; $("state").className = cls || ""; }
+
+  // ---- angles: iOS gives beta (front-back) and gamma (left-right)
+  const wrap = a => ((a + 180) % 360 + 360) % 360 - 180;
+  function onOrient(e) {
+    if (e.beta === null) return;
+    if (!ref) ref = { b: e.beta, g: e.gamma };
+    pitch = wrap(e.beta - ref.b);
+    roll = wrap(e.gamma - ref.g);
+    $("pOut").textContent = (pitch >= 0 ? "+" : "") + pitch.toFixed(0) + "°";
+    $("rOut").textContent = (roll >= 0 ? "+" : "") + roll.toFixed(0) + "°";
+  }
+
+  // ---- transport
+  function connect() {
+    ws = new WebSocket("wss://" + location.host + "/");
+    ws.onopen = () => setState("streaming to laptop", "ok");
+    ws.onclose = () => { setState("disconnected — reload", "bad"); ws = null; };
+    ws.onerror = () => setState("link error", "bad");
+  }
+  function send() {
+    if (!ws || ws.readyState !== 1) return;
+    seq++;
+    const ms = Math.round(performance.now() - t0);
+    ws.send(`PEND ${seq} ${ms} ${pitch.toFixed(2)} ${roll.toFixed(2)} ` +
+            `${slider.toFixed(3)} ${cutting ? 1 : 0}${recording ? 1 : 0}`);
+  }
+
+  // ---- start (must be a user gesture for iOS permission)
+  $("go").addEventListener("click", async () => {
+    try {
+      const DOE = window.DeviceOrientationEvent;
+      if (DOE && typeof DOE.requestPermission === "function") {
+        const res = await DOE.requestPermission();
+        if (res !== "granted") { setState("motion permission denied", "bad"); return; }
+      }
+    } catch (err) {
+      setState("motion unavailable — is this page https?", "bad"); return;
+    }
+    window.addEventListener("deviceorientation", onOrient, true);
+    $("setup").style.display = "none";
+    $("app").style.display = "flex";
+    t0 = performance.now();
+    started = true;
+    connect();
+    setInterval(send, 20);               // 50 Hz, matching the teach log
+    try { navigator.wakeLock?.request("screen"); } catch (e) {}
+  });
+
+  $("center").addEventListener("click", () => { ref = null; });
+
+  $("rec").addEventListener("click", () => {
+    recording = !recording;
+    $("rec").classList.toggle("on", recording);
+    $("recLabel").textContent = recording ? "RECORDING" : "RECORD";
+  });
+
+  // ---- hold to cut
+  const cutBtn = $("cut");
+  const setCut = on => {
+    cutting = on;
+    cutBtn.classList.toggle("on", on);
+    cutBtn.textContent = on ? "CLIPPER RUNNING" : "HOLD TO CUT";
+  };
+  ["pointerdown"].forEach(ev => cutBtn.addEventListener(ev, e => {
+    e.preventDefault(); setCut(true);
+  }));
+  ["pointerup", "pointercancel", "pointerleave"].forEach(ev =>
+    cutBtn.addEventListener(ev, () => setCut(false)));
+
+  // ---- spring-back height slider
+  const sl = $("slider"), knob = $("knob");
+  function place() {
+    const h = sl.clientHeight;
+    knob.style.top = (h / 2 - 28 - slider * (h / 2 - 32)) + "px";
+    knob.classList.toggle("live", slider !== 0);
+  }
+  function drag(e) {
+    const r = sl.getBoundingClientRect();
+    const y = (e.touches ? e.touches[0].clientY : e.clientY) - r.top;
+    slider = clamp((r.height / 2 - y) / (r.height / 2 - 32), -1, 1);
+    place();
+  }
+  sl.addEventListener("pointerdown", e => { e.preventDefault(); sl.setPointerCapture(e.pointerId); drag(e); });
+  sl.addEventListener("pointermove", e => { if (e.buttons || e.pressure) drag(e); });
+  ["pointerup", "pointercancel"].forEach(ev =>
+    sl.addEventListener(ev, () => { slider = 0; place(); }));
+  window.addEventListener("resize", place);
+  place();
+
+  // stop the arm if the page is backgrounded
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { setCut(false); slider = 0; place(); }
+  });
+})();
+</script>
+</body>
+</html>

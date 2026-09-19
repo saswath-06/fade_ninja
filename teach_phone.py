@@ -39,10 +39,19 @@ def build_rig(hardware: str | None) -> Rig:
     return Rig(head=Head(), seed=0)
 
 
-def teach(rig: Rig, port: int, rate_map: RateMap) -> list[Path]:
-    rx = PendantReceiver(port=port)
-    print(f"\n  Listening on udp://{local_ip()}:{port}")
-    print("  Enter that address in the Fade Pendant app, then Connect.\n")
+def teach(rig: Rig, port: int, rate_map: RateMap, web: bool = False) -> list[Path]:
+    if web:
+        from fadegpt.webpendant import WebPendantReceiver
+        rx = WebPendantReceiver(port=port)
+        print(f"\n  Open this on the iPhone (Safari):\n")
+        print(f"      https://{local_ip()}:{port}/\n")
+        print("  Safari will warn about the certificate — tap Show Details,")
+        print("  then 'visit this website'. That warning is expected: the cert")
+        print("  is self-signed, and HTTPS is what unlocks the motion sensors.\n")
+    else:
+        rx = PendantReceiver(port=port)
+        print(f"\n  Listening on udp://{local_ip()}:{port}")
+        print("  Enter that address in the Fade Pendant app, then Connect.\n")
     print("  tilt nose up/down  -> clipper tilt (hair length)")
     print("  twist wrist        -> around the head")
     print("  thumb slider       -> up/down the head")
@@ -127,7 +136,11 @@ def do_replay(rig: Rig, path: Path) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--port", type=int, default=8470)
+    ap.add_argument("--port", type=int, default=0,
+                    help="default 8470 native, 8443 with --web")
+    ap.add_argument("--web", action="store_true",
+                    help="serve the browser pendant over HTTPS — no Xcode, "
+                         "no app install; open the URL in Safari")
     ap.add_argument("--replay", metavar="LOG.csv",
                     help="replay a saved take instead of teaching")
     ap.add_argument("--hardware", metavar="SERIAL_PORT",
@@ -139,7 +152,8 @@ def main() -> int:
         do_replay(rig, Path(args.replay))
         return 0
 
-    saved = teach(rig, args.port, RateMap())
+    port = args.port or (8443 if args.web else 8470)
+    saved = teach(rig, port, RateMap(), web=args.web)
     if saved:
         print(f"\n  {len(saved)} take(s) saved. Replay one with:")
         print(f"    uv run python teach_phone.py --replay {saved[-1]}")
