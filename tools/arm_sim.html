@@ -14,7 +14,7 @@
   html,body { height:100%; margin:0; }
   body { background:var(--bg); color:var(--ink); overflow:hidden;
          font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; }
-  #gl { position:fixed; inset:0; display:block; }
+  #gl { position:fixed; top:0; left:0; display:block; }
   .hud { position:fixed; background:rgba(22,27,34,0.92); border:1px solid var(--line);
          border-radius:10px; padding:12px 14px; backdrop-filter:blur(6px); }
   #left { top:14px; left:14px; min-width:250px; }
@@ -300,12 +300,15 @@ Three.js could not be fetched — check the network, then reload.</div></div>
     pill($("pCut"), st.clipper);
   }
 
+  let lastW = 0, lastH = 0;
   function resize() {
     const w = innerWidth, h = innerHeight;
-    if (renderer.domElement.width !== Math.round(w * renderer.getPixelRatio())) {
-      renderer.setSize(w, h, false);
-      camera.aspect = w / h; camera.updateProjectionMatrix();
-    }
+    if (w === lastW && h === lastH) return;
+    lastW = w; lastH = h;
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(w, h);             // sets the buffer AND the CSS box
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
   }
   function loop() {
     resize();
