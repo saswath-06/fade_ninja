@@ -98,6 +98,7 @@
     <div class="hud hud-gauge">
       <div><span class="mm" id="mmOut">0.6</span> <span>mm left</span></div>
       <div id="thetaOut">tilt 0&deg; &middot; h = L&middot;sin&theta;</div>
+      <div style="margin-top:2px">scroll &uarr; leaves longer hair</div>
       <div class="bar"><i id="tiltBar"></i></div>
     </div>
     <div class="hud hud-log" id="logOut">log: 0 samples</div>
@@ -184,11 +185,11 @@
   };
 
   // ------------------------------------------------------------ hair field
-  const W = 512, H = 256;                      // texture cells (u, v)
+  const W = 1024, H = 512;                     // texture cells (u, v)
   const hair = new Float32Array(W * H).fill(HAIR0);
   const FACE_U = 0.25, FACE_HALF = 0.17;       // face points +z (camera front)
   const wrapDU = (a, b) => { let d = Math.abs(a - b); return Math.min(d, 1 - d); };
-  const isFace = (u, v) => wrapDU(u, FACE_U) < FACE_HALF && v > 0.26 && v < 0.66;
+  const isFace = (u, v) => wrapDU(u, FACE_U) < FACE_HALF && v > 0.30 && v < 0.70;
   const hasHair = (u, v) => v > 0.03 && v < 0.72 && !isFace(u, v);
   const elOf = v => 90 - v * 180;              // latitude deg (+ up)
   // practice band graded against the order (el -35..40, face excluded wide)
@@ -223,32 +224,31 @@
         tctx.fillRect(x, y, 1, 1);
       }
   }
-  function paintFace() {  // simple features so it reads as a person
-    const cx = FACE_U * W, cy = 0.44 * H;
-    // brows
-    tctx.strokeStyle = "#4a3a2c"; tctx.lineWidth = 3; tctx.lineCap = "round";
-    tctx.beginPath(); tctx.moveTo(cx - 30, cy - 16); tctx.quadraticCurveTo(cx - 22, cy - 20, cx - 13, cy - 17); tctx.stroke();
-    tctx.beginPath(); tctx.moveTo(cx + 13, cy - 17); tctx.quadraticCurveTo(cx + 22, cy - 20, cx + 30, cy - 16); tctx.stroke();
-    // eyes: whites + iris + pupil
-    for (const s of [-1, 1]) {
+  function paintFace() {  // features centred on the 3D nose (el ~ 0)
+    const s = W / 512;
+    const cx = FACE_U * W, cy = 0.50 * H;
+    tctx.strokeStyle = "#4a3a2c"; tctx.lineWidth = 3 * s; tctx.lineCap = "round";
+    tctx.beginPath(); tctx.moveTo(cx - 30*s, cy - 16*s); tctx.quadraticCurveTo(cx - 22*s, cy - 20*s, cx - 13*s, cy - 17*s); tctx.stroke();
+    tctx.beginPath(); tctx.moveTo(cx + 13*s, cy - 17*s); tctx.quadraticCurveTo(cx + 22*s, cy - 20*s, cx + 30*s, cy - 16*s); tctx.stroke();
+    for (const sd of [-1, 1]) {   // eyes: whites + iris + pupil + catchlight
       tctx.fillStyle = "#f3ede4";
-      tctx.beginPath(); tctx.ellipse(cx + s * 21, cy - 7, 7.5, 4.5, 0, 0, 7); tctx.fill();
+      tctx.beginPath(); tctx.ellipse(cx + sd * 21*s, cy - 7*s, 7.5*s, 4.5*s, 0, 0, 7); tctx.fill();
       tctx.fillStyle = "#5b4633";
-      tctx.beginPath(); tctx.arc(cx + s * 21, cy - 7, 3.4, 0, 7); tctx.fill();
+      tctx.beginPath(); tctx.arc(cx + sd * 21*s, cy - 7*s, 3.4*s, 0, 7); tctx.fill();
       tctx.fillStyle = "#20180f";
-      tctx.beginPath(); tctx.arc(cx + s * 21, cy - 7, 1.6, 0, 7); tctx.fill();
+      tctx.beginPath(); tctx.arc(cx + sd * 21*s, cy - 7*s, 1.6*s, 0, 7); tctx.fill();
+      tctx.fillStyle = "#f3ede4";
+      tctx.beginPath(); tctx.arc(cx + sd * 21*s - 1.2*s, cy - 8.2*s, 0.7*s, 0, 7); tctx.fill();
     }
-    // nose shadow + mouth
-    tctx.strokeStyle = "#c09068"; tctx.lineWidth = 2;
-    tctx.beginPath(); tctx.moveTo(cx - 4, cy + 8); tctx.quadraticCurveTo(cx, cy + 12, cx + 4, cy + 8); tctx.stroke();
-    tctx.strokeStyle = "#9c6a4c"; tctx.lineWidth = 2.5;
-    tctx.beginPath(); tctx.moveTo(cx - 11, cy + 24); tctx.quadraticCurveTo(cx, cy + 30, cx + 11, cy + 24); tctx.stroke();
-    // a little sideburn edge so the hairline reads deliberate
-    tctx.strokeStyle = "#2a221c"; tctx.lineWidth = 1.5;
-    tctx.beginPath(); tctx.moveTo(cx - FACE_HALF * W + 2, cy - 24);
-    tctx.lineTo(cx - FACE_HALF * W + 2, cy + 14); tctx.stroke();
-    tctx.beginPath(); tctx.moveTo(cx + FACE_HALF * W - 2, cy - 24);
-    tctx.lineTo(cx + FACE_HALF * W - 2, cy + 14); tctx.stroke();
+    tctx.strokeStyle = "#c09068"; tctx.lineWidth = 2 * s;
+    tctx.beginPath(); tctx.moveTo(cx - 4*s, cy + 8*s); tctx.quadraticCurveTo(cx, cy + 12*s, cx + 4*s, cy + 8*s); tctx.stroke();
+    tctx.strokeStyle = "#9c6a4c"; tctx.lineWidth = 2.5 * s;
+    tctx.beginPath(); tctx.moveTo(cx - 11*s, cy + 24*s); tctx.quadraticCurveTo(cx, cy + 30*s, cx + 11*s, cy + 24*s); tctx.stroke();
+    tctx.strokeStyle = "#2a221c"; tctx.lineWidth = 1.5 * s;
+    tctx.beginPath(); tctx.moveTo(cx - FACE_HALF * W + 2*s, cy - 24*s);
+    tctx.lineTo(cx - FACE_HALF * W + 2*s, cy + 14*s); tctx.stroke();
+    tctx.beginPath(); tctx.moveTo(cx + FACE_HALF * W - 2*s, cy - 24*s);
+    tctx.lineTo(cx + FACE_HALF * W - 2*s, cy + 14*s); tctx.stroke();
   }
   function repaintAll() { paintRect(0, 0, W - 1, H - 1); paintFace(); texture.needsUpdate = true; }
 
@@ -290,12 +290,12 @@
   for (const side of [-1, 1]) {
     const ear = new THREE.Mesh(new THREE.SphereGeometry(0.17, 20, 16), skinMat);
     ear.scale.set(0.35, 1.0, 0.62);
-    ear.position.set(side * 0.85, -0.08, 0.06);
+    ear.position.set(side * 0.85, -0.02, 0.06);
     scene.add(ear);
   }
   const nose = new THREE.Mesh(new THREE.SphereGeometry(0.13, 20, 16), skinMat);
   nose.scale.set(0.6, 0.8, 0.6);
-  nose.position.set(0, -0.16, 0.9);
+  nose.position.set(0, -0.04, 0.9);   // texture face is centred at el 0
   scene.add(nose);
   // neck + cape so it sits in a chair
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.4, 0.7, 24), skinMat);
@@ -355,9 +355,12 @@
 
   // ------------------------------------------------------------------ cut
   function cutAt(uvx, uvy) {
-    const v = uvy, el = elOf(v);
+    // three.js sphere UVs put v=1 at the crown; the hair grid puts row 0 there
+    const v = 1 - uvy, el = elOf(v);
     const rho = Math.max(HEAD_R_MM * Math.cos(el * Math.PI / 180), 15);
-    const halfWu = (BLADE_W_MM / 2) / (2 * Math.PI * rho);
+    // cap the angular width near the crown: a flat blade only contacts a
+    // patch of a tight curve, it doesn't wrap half the head
+    const halfWu = Math.min((BLADE_W_MM / 2) / (2 * Math.PI * rho), 0.045);
     const halfDv = (BLADE_D_MM / 2) / (Math.PI * HEAD_R_MM);
     const leave = calMM(theta);
     const x0 = Math.floor((uvx - halfWu) * W), x1 = Math.ceil((uvx + halfWu) * W);
@@ -371,7 +374,12 @@
         const k = y * W + x;
         if (hair[k] > leave) hair[k] = leave;
       }
-    paintRect(0, y0, W - 1, y1);                      // cheap dirty-row repaint
+    // repaint only the touched columns (both segments when wrapping the seam)
+    const segs = [[Math.max(0, x0), Math.min(W - 1, x1)]];
+    if (x0 < 0) segs.push([W + x0, W - 1]);
+    if (x1 > W - 1) segs.push([0, x1 - W]);
+    for (const [a, b] of segs) paintRect(a, y0, b, y1);
+    if (y1 / H > 0.28 && y0 / H < 0.72) paintFace();  // keep the face crisp
     texture.needsUpdate = true;
     mapDirty = true;
     logCount++;
@@ -411,7 +419,7 @@
     const curve = TARGETS[$("targetSel").value];
     let n = 0, sumAbs = 0, within = 0, uncut = 0;
     for (let y = 0; y < H; y++)
-      for (let x = 0; x < W; x += 2) {
+      for (let x = 0; x < W; x += 4) {
         const u = (x + 0.5) / W, v = (y + 0.5) / H;
         if (!inBand(u, v)) continue;
         const len = hair[y * W + x], tgt = curve(uHeight(v));
@@ -649,24 +657,32 @@
   }
 
   // -------------------------------------------------- boot (+hot republish)
+  const SW = 256, SH = 128;   // snapshot resolution (upsampled on restore)
   function start(saved) {
     try {
-      if (saved && saved.hair && saved.hair.length === W * H) {
-        for (let i = 0; i < hair.length; i++) hair[i] = saved.hair[i] / 10;
-        setTheta(saved.theta ?? 15);
+      if (saved && saved.hair && saved.hair.length === SW * SH) {
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++)
+            hair[y * W + x] = saved.hair[Math.floor(y * SH / H) * SW +
+                                         Math.floor(x * SW / W)] / 10;
+        setTheta(saved.theta ?? 30);
         $("targetSel").value = saved.target || "low";
-      } else setTheta(15);
-    } catch (e) { setTheta(15); }
+      } else setTheta(30);
+    } catch (e) { setTheta(30); }
     repaintAll();
     drawMinimap();
     setMotor(false);
     loop();
   }
   try {
-    window.claude?.hot?.snapshot?.(() => ({
-      hair: Array.from(hair, x => Math.round(x * 10)),
-      theta, target: $("targetSel").value,
-    }));
+    window.claude?.hot?.snapshot?.(() => {
+      const ds = new Array(SW * SH);
+      for (let y = 0; y < SH; y++)
+        for (let x = 0; x < SW; x++)
+          ds[y * SW + x] = Math.round(
+            hair[Math.floor(y * H / SH) * W + Math.floor(x * W / SW)] * 10);
+      return { hair: ds, theta, target: $("targetSel").value };
+    });
   } catch (e) { /* no runtime */ }
   if (window.claude?.hot?.ready) window.claude.hot.ready(start);
   else start(window.claude?.hot?.data ?? null);
