@@ -1,8 +1,8 @@
-"""UDP pose wire format for ARKit teleop (PHONE_POSE_TDD Phase 1).
+"""UDP pose wire format for ARKit teleop (PHONE_POSE_TDD Phase 1 + Fix pass).
 
 Messages (ASCII, one datagram):
 
-    START
+    START <track>
     POSE <t_ms> <x_m> <y_m> <z_m> <qw> <qx> <qy> <qz> <track>
     STOP
     STATUS
@@ -56,16 +56,35 @@ def _finite(name: str, v: float) -> float:
     return v
 
 
+def _parse_track(token: str) -> int:
+    try:
+        track = int(token)
+    except ValueError as e:
+        raise PoseProtocolError(f"bad track value {token!r}") from e
+    if track not in (TRACK_NORMAL, TRACK_LIMITED, TRACK_RELOCALIZING):
+        raise PoseProtocolError(f"bad track value {track}")
+    return track
+
+
 def parse_message(line: str) -> PoseMessage:
     parts = line.strip().split()
     if not parts:
         raise PoseProtocolError("empty message")
     kind = parts[0].upper()
 
-    if kind in ("START", "STOP", "STATUS"):
+    if kind in ("STOP", "STATUS"):
         if len(parts) != 1:
             raise PoseProtocolError(f"{kind} takes no arguments")
         return PoseMessage(kind=kind)
+
+    if kind == "START":
+        # Bare START == track 0 (compat with teleop_sim / older clients).
+        # Explicit START <track> enforces the gate on the wire.
+        if len(parts) == 1:
+            return PoseMessage(kind="START", track=TRACK_NORMAL)
+        if len(parts) == 2:
+            return PoseMessage(kind="START", track=_parse_track(parts[1]))
+        raise PoseProtocolError("START takes optional track: START [track]")
 
     if kind != "POSE":
         raise PoseProtocolError(f"unknown message {kind}")
@@ -78,15 +97,15 @@ def parse_message(line: str) -> PoseMessage:
         x, y, z = (float(parts[2]), float(parts[3]), float(parts[4]))
         qw, qx, qy, qz = (float(parts[5]), float(parts[6]),
                           float(parts[7]), float(parts[8]))
-        track = int(parts[9])
+        track = _parse_track(parts[9])
+    except PoseProtocolError:
+        raise
     except ValueError as e:
         raise PoseProtocolError(f"POSE: bad number ({e})") from None
 
     for name, v in (("x", x), ("y", y), ("z", z),
                     ("qw", qw), ("qx", qx), ("qy", qy), ("qz", qz)):
         _finite(name, v)
-    if track not in (TRACK_NORMAL, TRACK_LIMITED, TRACK_RELOCALIZING):
-        raise PoseProtocolError(f"bad track value {track}")
 
     norm = math.sqrt(qw * qw + qx * qx + qy * qy + qz * qz)
     if abs(norm - 1.0) > _QUAT_TOL:
@@ -119,10 +138,13 @@ class PoseSession:
         self.origin_quat: tuple[float, float, float, float] | None = None
 
     def handle(self, msg: PoseMessage, track: int | None = None) -> str:
-        """Apply a parsed message. For START, pass track= from the caller
-        (or from a preceding POSE). Returns an ack string."""
+        """Apply a parsed message. Returns an ack string.
+
+        For START, track comes from the message itself (START <track>).
+        The optional track= override is kept for tests only.
+        """
         if msg.kind == "START":
-            tr = TRACK_NORMAL if track is None else track
+            tr = msg.track if track is None else track
             if tr != TRACK_NORMAL:
                 raise PoseProtocolError("START requires normal tracking")
             self.started = True
@@ -154,8 +176,6 @@ class PoseSession:
                 msg.t_ms, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, msg.track)
             return "OK"
 
-        # Relative position in ARKit frame; orientation kept absolute for now
-        # (mapper extracts pitch delta vs origin_quat).
         rw, rx, ry, rz = _quat_mul(
             _quat_conj(*self.origin_quat),  # type: ignore[misc]
             msg.qw, msg.qx, msg.qy, msg.qz)
@@ -185,11 +205,7 @@ def _quat_mul(a, bw, bx, by, bz):
 
 
 def pitch_deg_from_quat(qw: float, qx: float, qy: float, qz: float) -> float:
-    """Extract pitch (nose up/down) in degrees from a relative quaternion.
-
-    Uses the Y-up ARKit convention: pitch is rotation about X.
-    """
-    # pitch = asin(2*(w*x + y*z))  for some conventions; for ARKit Y-up:
+    """Extract pitch (nose up/down) in degrees from a relative quaternion."""
     sinp = 2.0 * (qw * qx - qz * qy)
     sinp = max(-1.0, min(1.0, sinp))
     return math.degrees(math.asin(sinp))

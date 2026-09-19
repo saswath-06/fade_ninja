@@ -30,14 +30,14 @@ L0_MM = 55.0
 L2_MM = 80.0
 L3_MM = 80.0
 
-# Mid-workspace home: forward, slightly up, elbow folded
-Q_HOME = (0.0, 30.0, -60.0)  # q1, q2, q3 degrees
+# Mid-workspace home near reachable centroid (~110 mm reach, not 138 mm)
+Q_HOME = (0.0, 45.0, -90.0)  # q1, q2, q3 degrees
 
-# Hand-computed P_HOME = FK(Q_HOME) with the formulas above:
-# q2=30, q2+q3=-30
-# r = 80*cos30 + 80*cos(-30) = 80*(√3/2)*2 = 80*√3 ≈ 138.5640646055
-# z = 55 + 80*sin30 + 80*sin(-30) = 55 + 40 - 40 = 55
-P_HOME = (L2_MM * math.sqrt(3.0), 0.0, L0_MM)  # (~138.564, 0, 55)
+# Hand-computed P_HOME = FK(Q_HOME):
+# q2=45, q2+q3=-45
+# r = 80*cos45 + 80*cos(-45) = 80*√2 ≈ 113.1370849898
+# z = 55 + 80*sin45 + 80*sin(-45) = 55
+P_HOME = (L2_MM * math.sqrt(2.0), 0.0, L0_MM)  # (~113.137, 0, 55)
 
 Q1_LIMITS = (-90.0, 90.0)
 Q2_LIMITS = (0.0, 90.0)

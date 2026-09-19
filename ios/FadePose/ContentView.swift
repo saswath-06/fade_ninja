@@ -1,13 +1,11 @@
-// FadePose — minimal ARKit pose streamer (PHONE_POSE_TDD Phase 6).
-// Create an Xcode iOS App (SwiftUI), replace ContentView with this file,
-// delete the generated *App.swift (this file declares @main), and add
-// Info keys from Info-keys.plist.txt.
+// FadePose — minimal ARKit pose streamer (PHONE_POSE_TDD Fix pass).
+// Create via ios/FadePose/project.yml (XcodeGen) or by hand — see README.
 //
-// Sends UDP datagrams to pose_server (:8463):
-//   START
+// Wire (UDP :8463):
+//   START <track>
 //   POSE <t_ms> <x> <y> <z> <qw> <qx> <qy> <qz> <track>
 //   STOP
-// Camera frames are never sent — ARKit uses them internally for VIO only.
+// Camera frames are never sent — ARKit uses them only for VIO.
 
 import ARKit
 import Network
@@ -24,16 +22,34 @@ final class PoseStreamer: NSObject, ObservableObject, ARSessionDelegate {
     @Published var status = "idle"
     @Published var streaming = false
     @Published var trackingLabel = "—"
+    @Published var trackingNormal = false
 
     private let session = ARSession()
     private var connection: NWConnection?
     private var origin: simd_float4x4?
     private var lastSend = Date.distantPast
     private let sendInterval: TimeInterval = 0.02  // 50 Hz
+    private var sessionRunning = false
+    private var startSent = false
 
     override init() {
         super.init()
         session.delegate = self
+        session.delegateQueue = .main
+    }
+
+    /// Begin ARKit warmup as soon as the UI appears (independent of UDP).
+    func startSession() {
+        guard !sessionRunning else { return }
+        guard ARWorldTrackingConfiguration.isSupported else {
+            status = "ARKit world tracking not supported"
+            return
+        }
+        let config = ARWorldTrackingConfiguration()
+        config.worldAlignment = .gravity
+        session.run(config, options: [.resetTracking, .removeExistingAnchors])
+        sessionRunning = true
+        status = "AR warming up — wait for tracking: normal"
     }
 
     func connect(host: String, port: UInt16) {
@@ -42,20 +58,20 @@ final class PoseStreamer: NSObject, ObservableObject, ARSessionDelegate {
         let conn = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .udp)
         connection = conn
         conn.start(queue: .main)
-        status = "connected \(host):\(port)"
+        status = "UDP target \(host):\(port) (connectionless)"
     }
 
     func startStreaming() {
-        guard let state = session.currentFrame?.camera.trackingState,
-              case .normal = state else {
+        guard trackingNormal else {
             status = "tracking not normal — wait"
             return
         }
-        let config = ARWorldTrackingConfiguration()
-        config.worldAlignment = .gravity
-        session.run(config, options: [.resetTracking, .removeExistingAnchors])
+        guard connection != nil else {
+            status = "set host/port and Connect UDP first"
+            return
+        }
         origin = nil
-        sendLine("START")
+        startSent = false
         streaming = true
         status = "streaming"
         UIApplication.shared.isIdleTimerDisabled = true
@@ -63,36 +79,38 @@ final class PoseStreamer: NSObject, ObservableObject, ARSessionDelegate {
 
     func stopStreaming() {
         streaming = false
+        startSent = false
         sendLine("STOP")
-        session.pause()
         origin = nil
         status = "stopped"
         UIApplication.shared.isIdleTimerDisabled = false
     }
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        let track = Self.trackCode(for: frame.camera.trackingState)
+        trackingLabel = trackLabel(track)
+        trackingNormal = (track == .normal)
+
+        // Always update tracking during warmup — do not gate on streaming.
         guard streaming else { return }
+
         let now = Date()
         guard now.timeIntervalSince(lastSend) >= sendInterval else { return }
         lastSend = now
 
-        let track: TrackCode
-        switch frame.camera.trackingState {
-        case .normal: track = .normal
-        case .limited: track = .limited
-        case .notAvailable: track = .limited
-        @unknown default: track = .limited
+        if track != .normal {
+            return
         }
-        trackingLabel = "\(track)"
-
-        if track != .normal { return }
 
         let t = frame.camera.transform
-        if origin == nil {
+        if !startSent {
+            // START and origin capture on the first normal frame after Start.
+            sendLine("START \(TrackCode.normal.rawValue)")
             origin = t
+            startSent = true
         }
-        let o = origin!
-        // Relative translation in ARKit world (metres)
+        guard let o = origin else { return }
+
         let rel = simd_mul(simd_inverse(o), t)
         let x = rel.columns.3.x
         let y = rel.columns.3.y
@@ -106,8 +124,30 @@ final class PoseStreamer: NSObject, ObservableObject, ARSessionDelegate {
         sendLine(line)
     }
 
+    private static func trackCode(for state: ARCamera.TrackingState) -> TrackCode {
+        switch state {
+        case .normal:
+            return .normal
+        case .limited(let reason):
+            if case .relocalizing = reason { return .relocalizing }
+            return .limited
+        case .notAvailable:
+            return .limited
+        @unknown default:
+            return .limited
+        }
+    }
+
+    private func trackLabel(_ track: TrackCode) -> String {
+        switch track {
+        case .normal: return "normal"
+        case .limited: return "limited"
+        case .relocalizing: return "relocalizing"
+        }
+    }
+
     private func sendLine(_ line: String) {
-        guard let connection, let data = (line + "\n").data(using: .utf8) else { return }
+        guard let connection, let data = line.data(using: .utf8) else { return }
         connection.send(content: data, completion: .contentProcessed { _ in })
     }
 }
@@ -129,6 +169,7 @@ struct ContentView: View {
             Text("FadePose").font(.largeTitle.bold())
             Text(streamer.status).foregroundStyle(.secondary)
             Text("tracking: \(streamer.trackingLabel)")
+                .foregroundStyle(streamer.trackingNormal ? .green : .orange)
 
             HStack {
                 TextField("host", text: $host)
@@ -149,6 +190,7 @@ struct ContentView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(streamer.streaming ? .red : .green)
+            .disabled(!streamer.streaming && !streamer.trackingNormal)
 
             Text("Camera is used only for ARKit tracking. Frames are never sent.")
                 .font(.caption)
@@ -156,5 +198,6 @@ struct ContentView: View {
                 .multilineTextAlignment(.center)
         }
         .padding()
+        .onAppear { streamer.startSession() }
     }
 }

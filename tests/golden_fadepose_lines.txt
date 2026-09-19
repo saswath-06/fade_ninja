@@ -1,6 +1,6 @@
 # Golden UDP lines matching ios/FadePose wire format (T6.1).
-# Positions are absolute ARKit metres; track=0 normal.
-START
+# START requires track; positions are absolute ARKit metres; track=0 normal.
+START 0
 POSE 0 0.00000 0.00000 0.00000 1.00000 0.00000 0.00000 0.00000 0
 POSE 20 0.01000 0.00000 -0.02000 0.99905 0.04362 0.00000 0.00000 0
 POSE 40 0.02000 0.00500 -0.04000 0.99619 0.08716 0.00000 0.00000 0

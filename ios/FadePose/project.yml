@@ -1,0 +1,32 @@
+name: FadePose
+options:
+  bundleIdPrefix: com.fadegpt
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    TARGETED_DEVICE_FAMILY: "1"
+    INFOPLIST_KEY_NSCameraUsageDescription: "Camera is used only for ARKit world tracking so the phone can measure how far it has moved. Image frames are never stored or sent."
+    INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Sends phone pose samples to the barber robot laptop on the local network."
+    INFOPLIST_KEY_UILaunchScreen_Generation: YES
+targets:
+  FadePose:
+    type: application
+    platform: iOS
+    sources:
+      - path: .
+        excludes:
+          - README.md
+          - Info-keys.plist.txt
+          - project.yml
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.fadegpt.FadePose
+        GENERATE_INFOPLIST_FILE: YES
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+    dependencies:
+      - sdk: ARKit.framework
+      - sdk: Network.framework
+      - sdk: UIKit.framework
