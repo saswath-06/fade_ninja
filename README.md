@@ -211,9 +211,17 @@ Build the ARKit app from `ios/FadePose/README.md`. Gates: `PHONE_POSE_TDD.md`.
 
 ### ARKit pose teleop + 3D viewer (`pose_teleop.py`, `teleop_sim.py`)
 
-The FadePose app's 6DoF pose drives the same three joints directly: move the
-phone up and the clipper climbs the head, swing it around and it travels
-around the head, tilt your wrist and the clipper opens up.
+The FadePose app's 6DoF pose drives the arm so that **the clipper goes where
+your hand goes**: move the phone 10 cm and the tip travels 10 cm across the
+head, in the same direction. Hand movement is resolved into the two
+directions the machine can move and converted by arc length (phi on the rail
+arc, psi along the latitude circle), so it is 1:1 rather than one phone axis
+wired to one joint. Movement toward or away from the head is discarded — the
+rail sets stand-off and the spring slide absorbs the rest.
+
+On engage the hand frame is auto-aligned so "push forward" means "push at the
+head" regardless of which way you are standing or how the phone was held when
+ARKit started.
 
 ```
 uv run python teleop_sim.py        # then open the printed http://127.0.0.1:8465/
