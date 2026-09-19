@@ -75,8 +75,17 @@ def profile_to_log(profile: Profile, cal: Calibration, head: Head,
     """Generate an ideal (jitter-free) teach log that cuts this profile on
     THIS head — head size only changes the psi pass spacing; u handles height.
     """
+    return passes_log(profile_curve(profile), cal, head,
+                      pass_centers_deg(head, pass_advance_mm), sweep_rate)
+
+
+def passes_log(mm_of_u, cal: Calibration, head: Head, centers,
+               sweep_rate: float = SWEEP_RATE_DEG_S) -> TeachLog:
+    """Plan cutting passes at the given psi centers, leaving mm_of_u(u) of
+    hair. The general form of profile_to_log — the vision autopilot uses it
+    to plan corrective passes over just the regions the critic flags."""
     g = head.geometry
-    curve = profile_curve(profile)
+    curve = mm_of_u
     phi0 = max(JOINT_LIMITS["phi"].lo, g.phi_neckline_deg - PHI_LEAD_DEG)
     phi1 = min(JOINT_LIMITS["phi"].hi, g.phi_top_deg + PHI_LEAD_DEG)
     theta_hi = float(cal.mm_to_theta(curve(1.0)))
@@ -94,12 +103,12 @@ def profile_to_log(profile: Profile, cal: Calibration, head: Head,
         rows_theta.append(np.asarray(theta_fn(phis), dtype=float)
                           * np.ones(n + 1))
 
-    centers = pass_centers_deg(head, pass_advance_mm)
+    centers = np.asarray(centers, dtype=float)
     psi_rate = JOINT_LIMITS["psi"].max_rate * 0.6
     for k, psi_c in enumerate(centers):
         if k > 0:
             prev = centers[k - 1]
-            n = max(1, int(round((psi_c - prev) / psi_rate / TICK_S)))
+            n = max(1, int(round(abs(psi_c - prev) / psi_rate / TICK_S)))
             rows_phi.append(np.full(n, phi1))
             rows_psi.append(np.linspace(prev, psi_c, n))
             rows_theta.append(np.full(n, theta_hi))

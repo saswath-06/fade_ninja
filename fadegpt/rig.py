@@ -17,10 +17,15 @@ from .recorder import Recorder
 
 class Rig:
     def __init__(self, head: Head | None = None,
-                 cal: Calibration | None = None, seed: int = 0):
+                 cal: Calibration | None = None, seed: int = 0,
+                 physical_cal: Calibration | None = None):
         self.arm = VirtualArm(seed=seed)
         self.head = head
         self.cal = cal or default_calibration()
+        # what the blade PHYSICALLY leaves. Differs from self.cal (what the
+        # software believes) to model a miscalibrated mount — fault injection
+        # for the vision critic.
+        self.physical_cal = physical_cal or self.cal
         self.recorder = Recorder()
         self.clipper_on = False
         self.contact = False
@@ -32,7 +37,7 @@ class Rig:
         phi, psi, theta = (float(v) for v in self.encoders)
         if self.head is not None:
             self.contact = apply_cut(self.head, phi, psi, theta,
-                                     self.cal, self.clipper_on)
+                                     self.physical_cal, self.clipper_on)
         else:
             # hardware bench: the spring-slide switch, reported by the arm
             self.contact = bool(getattr(self.arm, "contact", False))

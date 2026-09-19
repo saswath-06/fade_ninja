@@ -18,7 +18,7 @@ class ReplayRefused(RuntimeError):
     """The log failed validation. The arm has not moved."""
 
 
-SNAP_EPS_DEG = 0.5
+SNAP_EPS_DEG = 1.0
 
 
 def _snap_to_limits(log: TeachLog, eps: float = SNAP_EPS_DEG) -> TeachLog:

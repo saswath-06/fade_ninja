@@ -171,6 +171,20 @@ within 0.03 mm; seams vanish once pass advance drops below ~43 mm for the
 45 mm blade; a profile exported from one head lands within 0.17 mm on a
 head 10% larger.
 
+### Vision control (`camera.py`, `vision.py`, `autopilot.py`)
+
+Computer vision controls the arm per section 4: a reference photo is read
+into a target profile, passes are planned and executed through the same
+deterministic replay pipeline, then the tripod-camera critic photographs the
+cut, measures it (flat-field -> ruler-calibrated intensity-to-mm model) and
+schedules corrective passes. Vision only ever sees rendered photographs,
+never simulator state. Proven by fault injection (`uv run python
+vision_demo.py`): with a blade leaving 18% too much hair AND a silently
+missed stripe, the critic measures the bias at 1.186 (injected: 1.18),
+recuts, spot-fixes the stripe, and lands within 0.03 mm of the photo target.
+Corrections are one-directional (too-long only) and judged against a
+rehearsal baseline learned during self-calibration.
+
 ### Hardware path (Pi 4 + Arduino)
 
 The Pi runs this Python stack unchanged; the Arduino
