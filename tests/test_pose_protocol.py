@@ -27,6 +27,8 @@ def test_parse_pose_valid():
 
 
 def test_parse_start_with_track():
+    bare = parse_message("START")
+    assert bare.kind == "START" and bare.track == TRACK_NORMAL
     msg = parse_message("START 0")
     assert msg.kind == "START"
     assert msg.track == TRACK_NORMAL
@@ -42,8 +44,8 @@ def test_parse_stop_status():
     "bad",
     [
         "",
-        "START",
         "START x",
+        "START 0 1",
         "POSE 1 2 3",
         "POSE 1 0 0 0 1 0 0 0",
         "POSE x 0 0 0 1 0 0 0 0",

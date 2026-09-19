@@ -78,9 +78,13 @@ def parse_message(line: str) -> PoseMessage:
         return PoseMessage(kind=kind)
 
     if kind == "START":
-        if len(parts) != 2:
-            raise PoseProtocolError("START takes track: START <track>")
-        return PoseMessage(kind="START", track=_parse_track(parts[1]))
+        # Bare START == track 0 (compat with teleop_sim / older clients).
+        # Explicit START <track> enforces the gate on the wire.
+        if len(parts) == 1:
+            return PoseMessage(kind="START", track=TRACK_NORMAL)
+        if len(parts) == 2:
+            return PoseMessage(kind="START", track=_parse_track(parts[1]))
+        raise PoseProtocolError("START takes optional track: START [track]")
 
     if kind != "POSE":
         raise PoseProtocolError(f"unknown message {kind}")
