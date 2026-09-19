@@ -1,0 +1,22 @@
+[project]
+name = "fadegpt"
+version = "0.1.0"
+description = "Robot barber: record-and-replay fade software with a physics-lite simulator"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+hw = ["pyserial>=3.5"]  # only needed on the Pi, to talk to the Arduino
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

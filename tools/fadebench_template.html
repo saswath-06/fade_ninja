@@ -1,0 +1,413 @@
+<title>Fade Bench</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #fafbfc;
+    --panel: #ffffff;
+    --panel-2: #eef1f4;
+    --ink: #101418;
+    --ink-2: #565d66;
+    --line: #dde2e8;
+    --blue: #2a78d6;
+    --orange: #eb6834;
+    --good: #008300;
+    --shadow: 0 1px 3px rgba(16, 20, 24, 0.07);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15171a;
+      --panel: #1d2025;
+      --panel-2: #262a30;
+      --ink: #f0f2f5;
+      --ink-2: #a4abb5;
+      --line: #31363e;
+      --blue: #3987e5;
+      --orange: #d95926;
+      --good: #3fae3f;
+      --shadow: none;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15171a;
+    --panel: #1d2025;
+    --panel-2: #262a30;
+    --ink: #f0f2f5;
+    --ink-2: #a4abb5;
+    --line: #31363e;
+    --blue: #3987e5;
+    --orange: #d95926;
+    --good: #3fae3f;
+    --shadow: none;
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    padding-inline: 16px;
+    padding-block: 18px 28px;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 18px; }
+  h1 { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--ink-2); font-size: 13px; }
+
+  .tabs { display: flex; gap: 6px; margin-left: auto; }
+  .tab {
+    font: 600 13px "Archivo", sans-serif; color: var(--ink-2);
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 999px; padding: 6px 14px; cursor: pointer;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .tab .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .tab[data-rec="low_fade"] .dot { background: var(--blue); }
+  .tab[data-rec="high_fade"] .dot { background: var(--orange); }
+  .tab[aria-pressed="true"] { color: var(--ink); background: var(--panel); box-shadow: var(--shadow); border-color: var(--ink-2); }
+  .tab:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+  .grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(240px, 1fr); gap: 14px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; box-shadow: var(--shadow); min-width: 0;
+  }
+  .card h2 {
+    margin: 0 0 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-2);
+  }
+  canvas { display: block; width: 100%; }
+  #headCanvas { border: 1px solid var(--line); border-radius: 6px; }
+
+  .legend { display: flex; align-items: center; gap: 8px; margin-top: 8px;
+            font: 400 11px "IBM Plex Mono", monospace; color: var(--ink-2); }
+  .ramp { flex: 1; height: 8px; border-radius: 4px; border: 1px solid var(--line);
+          background: linear-gradient(90deg, #f3f7fc, #c7dcf3, #7fb0e4, #2a78d6, #123f78); }
+
+  .right { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .tele { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+  .tele .cell { display: flex; flex-direction: column; gap: 1px; }
+  .tele .k { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+  .tele .v { font: 500 19px/1.25 "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+  .tele .unit { font-size: 12px; color: var(--ink-2); }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 3px;
+    font: 600 11px "Archivo", sans-serif; letter-spacing: 0.05em;
+    border-radius: 5px; padding: 3px 8px; width: fit-content;
+  }
+  .badge.on  { color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); }
+  .badge.off { color: var(--ink-2); background: var(--panel-2); }
+
+  .transport {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 14px; box-shadow: var(--shadow);
+  }
+  .transport button {
+    font: 600 13px "Archivo", sans-serif; color: var(--ink);
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 7px; padding: 7px 13px; cursor: pointer; min-width: 74px;
+  }
+  #play { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .speeds { display: flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+  .speeds button { border: 0; border-radius: 0; min-width: 46px; padding: 7px 9px;
+                   background: var(--panel); color: var(--ink-2); }
+  .speeds button[aria-pressed="true"] { background: var(--panel-2); color: var(--ink); font-weight: 700; }
+  #scrub { flex: 1 1 160px; accent-color: var(--blue); min-width: 120px; }
+  #clock { font: 500 13px "IBM Plex Mono", monospace; color: var(--ink-2);
+           font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .note { color: var(--ink-2); font-size: 12.5px; line-height: 1.55; max-width: 68ch; }
+  .note code { font: 400 11.5px "IBM Plex Mono", monospace; background: var(--panel-2);
+               border-radius: 4px; padding: 1px 5px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Fade Bench</h1>
+    <span class="sub">replaying the recorded teach log on the simulated head, 50&nbsp;Hz</span>
+    <div class="tabs" role="group" aria-label="Recording">
+      <button class="tab" data-rec="low_fade" aria-pressed="true"><span class="dot"></span>Low fade</button>
+      <button class="tab" data-rec="high_fade" aria-pressed="false"><span class="dot"></span>High fade</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Unrolled head — hair remaining</h2>
+      <canvas id="headCanvas" aria-label="Hair length map over the head"></canvas>
+      <div class="legend"><span>0&nbsp;mm (skin)</span><span class="ramp"></span><span>20&nbsp;mm (uncut)</span></div>
+    </div>
+
+    <div class="right">
+      <div class="card">
+        <h2>Arm telemetry</h2>
+        <div class="tele">
+          <div class="cell"><span class="k">phi — height</span><span class="v" id="tPhi">–</span></div>
+          <div class="cell"><span class="k">psi — around</span><span class="v" id="tPsi">–</span></div>
+          <div class="cell"><span class="k">theta — tilt</span><span class="v" id="tTheta">–</span></div>
+          <div class="cell"><span class="k">length left</span><span class="v" id="tMm">–</span></div>
+        </div>
+        <span class="badge off" id="contact">HEEL OFF SCALP</span>
+      </div>
+
+      <div class="card">
+        <h2>Fade curve — measured vs finished</h2>
+        <canvas id="curveCanvas" aria-label="Hair length versus normalized height"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="transport">
+    <button id="play" aria-label="Play or pause">Play</button>
+    <button id="restart">Restart</button>
+    <div class="speeds" role="group" aria-label="Playback speed">
+      <button data-speed="1" aria-pressed="false">1×</button>
+      <button data-speed="4" aria-pressed="false">4×</button>
+      <button data-speed="16" aria-pressed="true">16×</button>
+      <button data-speed="64" aria-pressed="false">64×</button>
+    </div>
+    <input type="range" id="scrub" min="0" value="0" step="1" aria-label="Scrub through the recording">
+    <span id="clock">0:00.0 / 0:00.0</span>
+  </div>
+
+  <p class="note">
+    Each frame applies one recorded sample — <code>t, phi, psi, theta, contact</code>,
+    smoothed exactly as the replay pipeline runs it — to a fresh 20&nbsp;mm head of hair.
+    The blade leaves <code>h&nbsp;=&nbsp;L·sin(theta)</code> via the calibration table; the
+    orange outline is the 45&nbsp;mm clipper footprint. Dotted lines mark the neckline and
+    the top of the fade zone. The curve panel shows the fade being carved toward the
+    finished shape the Python simulation measured (dashed).
+  </p>
+</div>
+
+<script id="simdata" type="application/json">/*__DATA__*/{}</script>
+<script>
+(() => {
+  const D = JSON.parse(document.getElementById("simdata").textContent);
+  const NP = D.phi_max + 1, NS = D.psi_max + 1;   // 71 rows (phi), 181 cols (psi)
+  const RAMP = [[0,[243,247,252]],[0.25,[199,220,243]],[0.5,[127,176,228]],
+                [0.75,[42,120,214]],[1,[18,63,120]]];
+
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const calMM = th => {
+    const t = D.calibration;
+    if (th <= t[0][0]) return t[0][1];
+    for (let i = 1; i < t.length; i++)
+      if (th <= t[i][0]) {
+        const f = (th - t[i-1][0]) / (t[i][0] - t[i-1][0]);
+        return t[i-1][1] + f * (t[i][1] - t[i-1][1]);
+      }
+    return t[t.length-1][1];
+  };
+  const rampColor = mm => {
+    const x = Math.min(1, Math.max(0, mm / D.hair_start_mm));
+    for (let i = 1; i < RAMP.length; i++)
+      if (x <= RAMP[i][0]) {
+        const f = (x - RAMP[i-1][0]) / (RAMP[i][0] - RAMP[i-1][0]);
+        return RAMP[i-1][1].map((c, k) => Math.round(c + f * (RAMP[i][1][k] - c)));
+      }
+    return RAMP[RAMP.length-1][1];
+  };
+
+  // ------------------------------------------------ state + cutting model
+  const hair = new Float32Array(NP * NS);
+  let recKey = "low_fade", idx = 0, playing = false, speed = 16;
+  const rec = () => D.recordings[recKey];
+
+  function resetHair() { hair.fill(D.hair_start_mm); }
+
+  function cut(s) {                     // s = [phi, psi, theta, contact]
+    if (!s[3]) return;
+    const row = Math.min(NP - 1, Math.max(0, Math.round(s[0])));
+    const halfW = (D.clipper_width_mm / 2 / D.rho_per_phi[row]) * 180 / Math.PI;
+    const halfD = (D.blade_depth_mm / 2 / D.r_per_phi[row]) * 180 / Math.PI;
+    const leave = calMM(s[2]);
+    const r0 = Math.max(0, Math.ceil(s[0] - halfD)), r1 = Math.min(NP - 1, Math.floor(s[0] + halfD));
+    const c0 = Math.max(0, Math.ceil(s[1] - halfW)), c1 = Math.min(NS - 1, Math.floor(s[1] + halfW));
+    for (let r = r0; r <= r1; r++)
+      for (let c = c0; c <= c1; c++) {
+        const k = r * NS + c;
+        if (hair[k] > leave) hair[k] = leave;
+      }
+  }
+
+  function seekTo(n) {                  // apply samples [0, n)
+    const S = rec().samples;
+    n = Math.min(n, S.length);
+    if (n < idx) { resetHair(); idx = 0; }
+    for (; idx < n; idx++) cut(S[idx]);
+  }
+
+  // ------------------------------------------------ head heatmap
+  const headC = document.getElementById("headCanvas");
+  const off = document.createElement("canvas");
+  off.width = NS; off.height = NP;
+  const offCtx = off.getContext("2d");
+  const img = offCtx.createImageData(NS, NP);
+
+  function drawHead() {
+    const ctx = headC.getContext("2d");
+    const dpr = window.devicePixelRatio || 1;
+    const w = headC.clientWidth || 600, h = Math.round(w * NP / NS * 1.35);
+    headC.style.height = h + "px";
+    if (headC.width !== Math.round(w * dpr)) { headC.width = Math.round(w * dpr); headC.height = Math.round(h * dpr); }
+    for (let r = 0; r < NP; r++)
+      for (let c = 0; c < NS; c++) {
+        const [R, G, B] = rampColor(hair[r * NS + c]);
+        const p = ((NP - 1 - r) * NS + c) * 4;      // phi points up
+        img.data[p] = R; img.data[p+1] = G; img.data[p+2] = B; img.data[p+3] = 255;
+      }
+    offCtx.putImageData(img, 0, 0);
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(off, 0, 0, w, h);
+
+    const y = phi => (1 - phi / D.phi_max) * h;
+    const x = psi => psi / D.psi_max * w;
+    ctx.strokeStyle = css("--ink-2"); ctx.setLineDash([3, 4]); ctx.lineWidth = 1;
+    for (const g of [D.geometry.neck, D.geometry.top]) {
+      ctx.beginPath(); ctx.moveTo(0, y(g)); ctx.lineTo(w, y(g)); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    const s = rec().samples[Math.max(0, idx - 1)];
+    if (s && idx > 0 && idx < rec().samples.length) {
+      const row = Math.min(NP - 1, Math.max(0, Math.round(s[0])));
+      const halfW = (D.clipper_width_mm / 2 / D.rho_per_phi[row]) * 180 / Math.PI;
+      const halfD = Math.max(1.5, (D.blade_depth_mm / 2 / D.r_per_phi[row]) * 180 / Math.PI);
+      ctx.strokeStyle = css("--orange"); ctx.lineWidth = 2;
+      ctx.strokeRect(x(s[1] - halfW), y(s[0] + halfD),
+                     x(2 * halfW), y(D.phi_max - 2 * halfD));
+    }
+    ctx.restore();
+  }
+
+  // ------------------------------------------------ fade curve
+  const curveC = document.getElementById("curveCanvas");
+
+  function measuredCurve(bins = 20) {
+    const g = D.geometry, span = g.top - g.neck;
+    const sum = new Float32Array(bins), cnt = new Float32Array(bins);
+    for (let r = 0; r < NP; r++) {
+      const u = (r - g.neck) / span;
+      if (u < 0 || u > 1) continue;
+      const b = Math.min(bins - 1, Math.floor(u * bins));
+      for (let c = 0; c < NS; c++) {
+        const v = hair[r * NS + c];
+        if (v < D.hair_start_mm - 1e-6) { sum[b] += v; cnt[b]++; }
+      }
+    }
+    const pts = [];
+    for (let b = 0; b < bins; b++)
+      if (cnt[b]) pts.push([(b + 0.5) / bins, sum[b] / cnt[b]]);
+    return pts;
+  }
+
+  function drawCurve() {
+    const ctx = curveC.getContext("2d");
+    const dpr = window.devicePixelRatio || 1;
+    const w = curveC.clientWidth || 300, h = 170;
+    curveC.style.height = h + "px";
+    if (curveC.width !== Math.round(w * dpr)) { curveC.width = Math.round(w * dpr); curveC.height = Math.round(h * dpr); }
+    ctx.save(); ctx.scale(dpr, dpr); ctx.clearRect(0, 0, w, h);
+    const mmax = 7, padL = 26, padB = 18, padT = 6, padR = 6;
+    const X = u => padL + u * (w - padL - padR);
+    const Y = mm => padT + (1 - mm / mmax) * (h - padT - padB);
+
+    ctx.strokeStyle = css("--line"); ctx.lineWidth = 1;
+    ctx.fillStyle = css("--ink-2");
+    ctx.font = '10px "IBM Plex Mono", monospace';
+    for (const mm of [0, 2, 4, 6]) {
+      ctx.beginPath(); ctx.moveTo(padL, Y(mm)); ctx.lineTo(w - padR, Y(mm)); ctx.stroke();
+      ctx.fillText(mm, 8, Y(mm) + 3);
+    }
+    ctx.textAlign = "center";
+    for (const u of [0, 0.5, 1]) ctx.fillText(u, X(u), h - 5);
+    ctx.textAlign = "left";
+
+    const path = (pts, color, dash) => {
+      if (pts.length < 2) return;
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash(dash);
+      ctx.beginPath();
+      pts.forEach(([u, mm], i) => i ? ctx.lineTo(X(u), Y(mm)) : ctx.moveTo(X(u), Y(mm)));
+      ctx.stroke(); ctx.setLineDash([]);
+    };
+    path(rec().final_u.map((u, i) => [u, rec().final_mm[i]]), css("--ink-2"), [4, 4]);
+    path(measuredCurve(), css(recKey === "low_fade" ? "--blue" : "--orange"), []);
+    ctx.restore();
+  }
+
+  // ------------------------------------------------ telemetry + transport
+  const $ = id => document.getElementById(id);
+  const fmtT = n => {
+    const s = n * D.tick_ms / 1000;
+    return `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
+  };
+
+  function drawTelemetry() {
+    const S = rec().samples, s = S[Math.max(0, Math.min(idx, S.length) - 1)];
+    $("tPhi").innerHTML = s ? `${s[0].toFixed(1)}<span class="unit">°</span>` : "–";
+    $("tPsi").innerHTML = s ? `${s[1].toFixed(1)}<span class="unit">°</span>` : "–";
+    $("tTheta").innerHTML = s ? `${s[2].toFixed(1)}<span class="unit">°</span>` : "–";
+    $("tMm").innerHTML = s ? `${calMM(s[2]).toFixed(1)}<span class="unit">mm</span>` : "–";
+    const on = s && s[3] && idx > 0;
+    $("contact").textContent = on ? "HEEL ON SCALP" : "HEEL OFF SCALP";
+    $("contact").className = "badge " + (on ? "on" : "off");
+    $("scrub").value = idx;
+    $("clock").textContent = `${fmtT(idx)} / ${fmtT(S.length)}`;
+    $("play").textContent = playing ? "Pause" : (idx >= S.length ? "Replay" : "Play");
+  }
+
+  function render() { drawHead(); drawCurve(); drawTelemetry(); }
+
+  let last = null;
+  function loop(ts) {
+    if (playing) {
+      if (last != null) {
+        const adv = Math.max(1, Math.round((ts - last) / D.tick_ms * speed));
+        seekTo(idx + adv);
+        if (idx >= rec().samples.length) playing = false;
+        render();
+      }
+      last = ts;
+    } else last = null;
+    requestAnimationFrame(loop);
+  }
+
+  function switchRec(key) {
+    recKey = key; playing = false;
+    document.querySelectorAll(".tab").forEach(b =>
+      b.setAttribute("aria-pressed", String(b.dataset.rec === key)));
+    $("scrub").max = rec().samples.length;
+    resetHair(); idx = 0; seekTo(rec().samples.length);  // show the finished cut
+    render();
+  }
+
+  $("play").addEventListener("click", () => {
+    if (!playing && idx >= rec().samples.length) { resetHair(); idx = 0; }
+    playing = !playing; render();
+  });
+  $("restart").addEventListener("click", () => { resetHair(); idx = 0; playing = true; render(); });
+  $("scrub").addEventListener("input", e => { playing = false; seekTo(+e.target.value); render(); });
+  document.querySelectorAll(".speeds button").forEach(b =>
+    b.addEventListener("click", () => {
+      speed = +b.dataset.speed;
+      document.querySelectorAll(".speeds button").forEach(x =>
+        x.setAttribute("aria-pressed", String(x === b)));
+    }));
+  document.querySelectorAll(".tab").forEach(b =>
+    b.addEventListener("click", () => switchRec(b.dataset.rec)));
+  window.addEventListener("resize", render);
+  window.addEventListener("keydown", e => {
+    if (e.code === "Space" && e.target.tagName !== "INPUT" && e.target.tagName !== "BUTTON") {
+      e.preventDefault(); $("play").click();
+    }
+  });
+
+  switchRec("low_fade");
+  requestAnimationFrame(loop);
+})();
+</script>
