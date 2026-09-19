@@ -181,8 +181,10 @@ section 3 rule kept intact: the phone is a controller, so its drift is
 absorbed by rate control and the barber's eye, and the saved log is exactly
 where the clipper went.
 
-No camera and no ARKit — an IMU cannot integrate to position without
-drifting metres in seconds, and rate control does not need position.
+No camera and no ARKit **on this rate pendant** — an IMU cannot integrate to
+position without drifting metres in seconds, and rate control does not need
+position. Absolute pose teleop (ARKit → IK → EEZYbotARM) is a separate path;
+see `PHONE_POSE_TDD.md` and the planned `ios/FadePose/` app.
 
 ```
 uv run python teach_phone.py                        # teach on the sim head

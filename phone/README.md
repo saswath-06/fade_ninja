@@ -3,11 +3,13 @@
 The phone replaces the teach glove. It streams orientation over UDP at 50 Hz;
 the laptop turns that into `JOG` rates and records where the **arm** went.
 
-No camera and no ARKit: gravity-referenced pitch and roll from CoreMotion are
-drift-free, work in any lighting, and need no permissions beyond local
-network. Position tracking would require the camera (an IMU alone cannot
-integrate to position without drifting metres in seconds) and the project
-does not need it — README section 3 specifies rate control.
+No camera and no ARKit **in this rate pendant**: gravity-referenced pitch and
+roll from CoreMotion are drift-free, work in any lighting, and need no
+permissions beyond local network. Absolute position tracking needs the camera
+(an IMU alone drifts metres in seconds); this app deliberately does not do
+that — README section 3 specifies rate control. A separate ARKit pose app
+(`ios/FadePose/`, see `PHONE_POSE_TDD.md`) is the absolute-pose path and is
+not this pendant.
 
 ## Build it (15 minutes)
 

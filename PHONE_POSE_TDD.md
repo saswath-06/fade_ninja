@@ -1,41 +1,81 @@
 # Phone → EEZYbotARM Teleop (Step 1 TDD Plan)
 
-Replace CV input with ARKit phone pose streaming into EEZYbotARM inverse kinematics, with a live sim demo and a minimal Xcode skeleton — built test-first with gated checkpoints before hardware.
+Add absolute ARKit phone-pose teleop (position + tilt → IK → joints) **alongside** the existing CoreMotion rate pendant — built test-first with gated checkpoints before hardware.
+
+There is **no CV code to remove**. README §4 vision text is roadmap prose only. The existing teach path is already the iPhone rate pendant (`phone/` → UDP `:8470` → `fadegpt/pendant.py`).
+
+---
+
+## Relationship to the existing phone pendant
+
+| Path | Location | Transport | Sensing | Control |
+|------|----------|-----------|---------|---------|
+| **Rate pendant (keep)** | `phone/` + `fadegpt/pendant.py` | UDP **:8470** | CoreMotion pitch/roll only | → `JOG` rates (rail `phi/psi/theta`) |
+| **Pose teleop (this plan)** | `ios/FadePose/` + `pose_server.py` | UDP **:8463** | ARKit world tracking | → IK → `q1..q4` (EEZY) |
+
+- The CoreMotion pendant stays untouched as the **joint-space / rail fallback**.
+- The ARKit app is a **second, separate** app. Do not merge them in step 1.
+- Docs that say “No camera and no ARKit” are **scoped to the rate pendant**, not the whole project. Amend `phone/README.md` and `README.md` §8 accordingly when implementing Phase 0.
+- ARKit app **must** declare `NSCameraUsageDescription` (camera used only for VIO; frames never sent) plus `NSLocalNetworkUsageDescription`.
 
 ---
 
 ## What the arm actually is
 
-The physical target is **[EEZYbotARM (Thingiverse 1015238)](https://www.thingiverse.com/thing:1015238)** by daGHIZmo — not the fadegpt “arc rail around a head” design in `README.md` / `fadegpt/head.py`.
+The physical target for **this** path is **[EEZYbotARM (Thingiverse 1015238)](https://www.thingiverse.com/thing:1015238)** by daGHIZmo — not the fadegpt arc-rail geometry in `fadegpt/head.py`.
 
 ```mermaid
 flowchart TB
   subgraph eezy [EEZYbotARM 3DOF]
-    q1[q1 base yaw - rotation around]
-    q2[q2 shoulder - vertical drive]
-    q3[q3 elbow - forward reach]
+    q1[q1 base yaw]
+    q2[q2 shoulder]
+    q3[q3 elbow]
   end
-  subgraph wrist [Optional 4th for barber]
-    q4[q4 wrist tilt - clipper angle]
+  subgraph wrist [4th channel]
+    q4[q4 wrist tilt]
   end
   phoneXYZ[Phone x y z] --> IK
   IK --> q1
   IK --> q2
   IK --> q3
-  phoneTilt[Phone pitch from start] --> q4
+  phoneTilt[Phone pitch from START] --> q4
 ```
-
-**Mental model for the demo** (around / height / tilt) maps like this:
 
 | Intent | EEZYbotARM reality |
 |--------|-------------------|
-| Around | **q1** base servo (yaw) |
-| Height + reach | **q2 + q3** coupled via parallelogram linkage (not independent “height only”) |
-| Clipper tilt | **Not in stock 3DOF** — claw is open/close. Step 1 treats **phone pitch → q4** as a 4th channel in sim; hardware uses a tilt servo on the claw mount when wired, otherwise tilt is sim-only |
+| Around | **q1** base yaw |
+| Height + reach | **q2 + q3** coupled (parallelogram); not independent “height only” |
+| Clipper tilt | Stock 3DOF has no wrist; **q4** is phone pitch in sim; real tilt servo on claw mount when wired |
 
-**Committed control mode:** absolute phone pose → IK (not rate JOG). Phone is a virtual hand holding the trimmer.
+**Committed control mode:** absolute phone pose → IK (not rate JOG).  
+**Committed stack:** laptop/Pi runs IK at 50 Hz; minimal iOS app streams ARKit pose only; Pi can PWM servos later.
 
-**Committed stack:** laptop/Pi runs IK at 50 Hz; minimal iOS app only streams ARKit pose; Pi can drive servos later via the same protocol.
+**Payload caveat:** EEZY MK1 is a desktop arm (tens of grams tip load). A hair clipper (300–500 g) will not ride it. Step 1 is sim + lightweight tip / air moves only. See Open questions.
+
+---
+
+## Frames and units
+
+Define these once; every Phase 3 sign test depends on them.
+
+| Frame | Axes | Units | Notes |
+|-------|------|-------|-------|
+| **ARKit** (after START) | Y-up, right-handed, **−Z forward** from the START pose | meters, quaternion | Camera used for VIO only |
+| **Arm / IK** | Z-up, X forward at home yaw, Y left | **mm**, joint angles in **degrees** | Home joints named in T2.0 |
+
+**Mapping (phone Δ → arm target Δ), applied after scale:**
+
+```
+arm_x_mm =  scale * phone_z_m * (-1000)   # ARKit −Z forward → arm +X
+arm_y_mm =  scale * phone_x_m * (-1000)   # ARKit +X right  → arm −Y (or flip if build mirrors)
+arm_z_mm =  scale * phone_y_m *  1000     # ARKit +Y up     → arm +Z height
+```
+
+Signs for Y may be verified once against the physical base; lock the chosen signs in `pose_mapper.py` constants and test against them.
+
+**Orientation in step 1:** the wire carries a full quaternion. **Only pitch** (nose tilt relative to START) maps to **q4**. **Roll and yaw are parsed and discarded.**
+
+**Default scale:** `0.3` (10 cm phone → 3 cm tip). Scale `1.0` is opt-in; EEZY horizontal reach is only ~130–180 mm.
 
 ---
 
@@ -43,55 +83,46 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-  iOS[iOS ARKit app] -->|POSE lines TCP| Bridge[pose_server on laptop or Pi]
-  Fake[fake_phone.py] -->|same POSE| Bridge
-  Bridge --> Mapper[pose_to_joints IK]
-  Mapper --> Arm[VirtualArm EEZY or HardwareServos]
-  Arm --> SimUI[live sim web page]
-  Arm -->|PWM later| Servos[MG90S x3 plus tilt]
+  iOS[iOS ARKit FadePose] -->|POSE UDP 8463| Bridge[pose_server]
+  Fake[fake_phone.py] -->|same POSE UDP| Bridge
+  Bridge --> Mapper[pose_mapper + eezy_ik]
+  Mapper --> Sim[eezy_sim canvas via WS]
+  Mapper -->|Phase 7| PiPWM[Pi servos dry-run then live]
 ```
 
-**Pose wire format** (new, line-based, same style as `fadegpt/protocol.py`):
+**Transport: UDP** (same rationale as the rate pendant): live control prefers dropping stale samples over TCP head-of-line blocking. Receiver keeps **only the newest** datagram; never queue a backlog of poses.
+
+**Pose wire format** (ASCII, one datagram per message):
 
 ```
-START                          # zero pose origin
-POSE <t_ms> <x_m> <y_m> <z_m> <qw> <qx> <qy> <qz>
+START                                    # zero origin; refuse unless tracking normal
+POSE <t_ms> <x_m> <y_m> <z_m> <qw> <qx> <qy> <qz> <track>
 STOP
-STATUS
+STATUS                                   # request/response over a side channel or reply datagram
 ```
 
-- `(x,y,z)` meters relative to `START` (ARKit world tracking).
-- Quaternion = orientation relative to `START`.
+- `track`: `0` = normal, `1` = limited, `2` = relocalizing (or equivalent). `START` / motion only when `track == 0`.
 - Camera frames are never sent.
-- Downstream: scale meters → mm workspace, IK → `(q1,q2,q3)`, pitch → `q4`.
-- Default pose port: **`8463`** (leave legacy `:8462` alone for now).
+- Port **UDP `:8463`**. Leave TCP `:8462` (virtual ESP32) and UDP `:8470` (rate pendant) alone.
+- New joint names: **`q1..q4`**. Do not overload rail `phi/psi/theta` in the pose path.
 
-**Do not reuse** the old rail names `phi/psi/theta` for EEZY joints in new code — keep old teach/replay modules frozen or delete with CV; new names are `q1..q4`.
+**Keep (parallel, not deleted):** teach/replay/profile, rail sim (`head.py`, `cutting.py`, …), `server.py`, rate pendant — the **rail + JOG** product path stays. Pose/EEZY is additive.
 
----
+**IK reference:** adapt math from [meisben/easyEEZYbotARM](https://github.com/meisben/easyEEZYbotARM); implement pure functions in `fadegpt/eezy_ik.py` with our constants (no runtime dependency on that repo).
 
-## Delete / keep
-
-**Delete (CV path, unused for teleop):**
-
-- `fadegpt/camera.py`, `fadegpt/vision.py`, `fadegpt/autopilot.py`
-- `vision_demo.py`, `tests/test_vision.py`
-
-**Keep for now (can prune later):** teach/replay/profile, `server.py` JOG/MOVE path — still useful as a joint-space fallback, but **not** the phone path.
-
-**Replace conceptually:** rail `Head` FK with EEZYbotARM FK/IK module. Existing `firmware/robot_barber_arm` is stepper+rail — **out of scope for step 1 actuation**; step 1 hardware stub is PWM servos on Pi (new thin driver), sim first.
-
-**IK reference (adapt, don’t vendor blindly):** [meisben/easyEEZYbotARM](https://github.com/meisben/easyEEZYbotARM) kinematics docs — implement our own pure functions under `fadegpt/eezy_ik.py` with fixed link lengths and unit tests (no runtime dependency on that repo).
+**Servos:** stock EEZY often cites MG90S; shoulder class is **unverified**. Measure torque needs and link lengths **before Phase 7**. Do not treat MG90S × 3 as approved hardware.
 
 ---
 
 ## TDD phases (every gate has a failing test first)
 
-### Phase 0 — Kill CV, green baseline
+### Phase 0 — Green baseline (no deletions)
 
-1. Delete CV files listed above.
-2. **Checkpoint T0:** `uv run pytest` passes without vision tests.
-3. Trim README vision subsection only after T0 green.
+1. Record baseline: `uv run pytest` (expect ~75 passed).
+2. Amend pendant-scoped ARKit wording in `phone/README.md` and `README.md` §8 (pendant subsection): “No camera / no ARKit” applies to the **rate pendant**, not the project; point to this doc for the pose path.
+3. Do **not** delete CV files — they do not exist. Do **not** trim README §4 vision roadmap in this phase.
+
+**Checkpoint T0:** pytest green; README wording amended.
 
 ### Phase 1 — Pose protocol (no arm yet)
 
@@ -99,141 +130,163 @@ STATUS
 
 | ID | Test first | Pass when |
 |----|------------|-----------|
-| T1.1 | parse `POSE …` | 8 numbers + t_ms validated |
-| T1.2 | reject bad lines | wrong arity / NaN → `ProtocolError` |
-| T1.3 | `START` resets origin flag | subsequent poses accepted |
-| T1.4 | quaternion normalized or rejected | \|q\| within 1e-3 of 1 |
+| T1.1 | parse `POSE …` | t_ms, xyz, quat, track validated |
+| T1.2 | reject bad lines | wrong arity / NaN → error |
+| T1.3 | `START` resets origin | subsequent poses accepted relative to origin |
+| T1.4 | quaternion | \|q\| within 1e-3 of 1 or reject |
+| T1.5 | tracking gate | `START` / accept motion only when `track == normal` |
 
-**Checkpoint T1:** all protocol tests green. No network yet.
+**Checkpoint T1:** protocol tests green. No network yet.
 
-### Phase 2 — EEZYbotARM FK / IK (pure math)
+### Phase 2 — EEZYbotARM FK / IK (HARD GATE)
 
 **New files:** `fadegpt/eezy_ik.py`, `tests/test_eezy_ik.py`
 
-Link lengths: constants matching EEZY MK1 (document measured mm once printed; start with published easyEEZYbotARM defaults).
-
 | ID | Test first | Pass when |
 |----|------------|-----------|
-| T2.1 | FK known home | FK(q_home) ≈ expected XYZ within 1 mm |
-| T2.2 | IK round-trip | for N reachable points, FK(IK(p)) ≈ p within 2 mm |
-| T2.3 | unreachable | IK returns `None` / raises; never invents joints |
-| T2.4 | joint limits | outputs always inside servo-safe ranges |
-| T2.5 | tilt map | phone pitch deg → q4 linear map, clamped |
+| T2.0 | named constants | link lengths + `Q_HOME` published; hand-computed `FK(Q_HOME) = P_HOME` written in the test |
+| T2.1 | FK home | `FK(Q_HOME)` matches `P_HOME` within **1 mm** (ground truth from T2.0, not “TBD after print”) |
+| T2.2 | IK round-trip | N points sampled from the **limit-constrained** workspace; `FK(IK(p)) ≈ p` within 2 mm |
+| T2.3 | geometric unreachable | IK returns `None` (never invents a pose) |
+| T2.4 | joint-limit miss | if the algebraic solution lies outside joint limits → `None` (**never clamp** to a different XYZ) |
+| T2.5 | tilt map | phone pitch deg → q4 linear map, **clamped** to q4 servo range only (independent of XYZ IK) |
 
-**Checkpoint T2:** IK suite green. This is the HARD GATE before phone or UI work.
+**Order for a pose solve:** solve IK → if `None` or outside limits → unreachable. Clamping XYZ joints to limits is forbidden because it silently moves the tip.
+
+**Checkpoint T2:** IK suite green before phone or UI work.
 
 ### Phase 3 — Pose → joints mapper
 
 **New files:** `fadegpt/pose_mapper.py`, `tests/test_pose_mapper.py`
 
-| ID | Test first | Pass when |
-|----|------------|-----------|
-| T3.1 | origin | first pose after START → home joints |
-| T3.2 | +Z phone | end effector Z increases (height) |
-| T3.3 | lateral | base q1 rotates with correct sign |
-| T3.4 | pitch | q4 follows pitch; q1–q3 unchanged for pure pitch |
-| T3.5 | scale | 10 cm phone move → ~10 cm EEZY tip move (configurable scale, default 1.0) |
-| T3.6 | out of reach | mapper holds last good joints + sets `reachable=false` (no jump) |
-| T3.7 | slew limit | phone jumps don’t whip joint commands past max deg/s |
-
-**Checkpoint T3:** mapper tests green. Fake phone can be written against this API.
-
-### Phase 4 — Live pose server + fake phone (sim control loop)
-
-**New/extend:** `pose_server.py` (or extend `server.py` with a `--pose` mode), `tools/fake_phone.py`, `tests/test_pose_server.py`
+Default `scale = 0.3`. Home joints = `Q_HOME` from T2.0.
 
 | ID | Test first | Pass when |
 |----|------------|-----------|
-| T4.1 | TCP accept | client connects; `START` → `OK` |
-| T4.2 | stream | 50 synthetic `POSE` lines → joint state updates each tick |
-| T4.3 | STATUS JSON | includes `q1..q4`, `x,y,z`, `reachable`, `mode` |
-| T4.4 | bind | `--host 0.0.0.0 --port 8463` so phone on LAN can connect |
+| T3.1 | origin | first accepted pose after START → `Q_HOME` |
+| T3.2 | phone **+Y** (ARKit up) | arm tip **+Z** increases (height) |
+| T3.3 | phone lateral (mapped X) | base **q1** rotates with the locked sign from Frames |
+| T3.4 | pitch only | **q4** follows pitch; **q1–q3** unchanged |
+| T3.5 | scale | 10 cm phone → **3 cm** tip at default scale 0.3 |
+| T3.6 | out of reach | hold last good joints; `reachable=false`; no jump |
+| T3.7 | slew limit | joint commands never exceed max deg/s even on phone jumps |
 
-**Checkpoint T4 (manual + automated):**
+**Checkpoint T3:** mapper tests green.
+
+### Phase 4 — Live pose server + fake phone
+
+**New:** `pose_server.py`, `tools/fake_phone.py`, `tests/test_pose_server.py`
+
+| ID | Test first | Pass when |
+|----|------------|-----------|
+| T4.1 | UDP bind | listen `0.0.0.0:8463`; `START` → `OK` (or ack datagram) |
+| T4.2 | stream | 50 synthetic `POSE` datagrams → joints update; **only newest** packet used |
+| T4.3 | STATUS | JSON includes `q1..q4`, `x,y,z`, `reachable`, `stale`, `mode` |
+| T4.4 | LAN | phone on hotspot can reach host IP:8463 |
+| T4.5 | watchdog | **no POSE for 250 ms** → joints **hold**, `stale=true` in STATUS; in `--hardware`, **zero velocity / freeze commands** (same spirit as `pendant.WATCHDOG_S`) |
+
+**Checkpoint T4:**
 
 ```bash
 uv run python pose_server.py --host 0.0.0.0 --port 8463
-uv run python tools/fake_phone.py --circle 0.05   # 5 cm circle
-# STATUS / logs show q1–q4 changing smoothly
+uv run python tools/fake_phone.py --circle 0.05
+# STATUS shows smooth q1..q4; kill fake_phone → stale within 250 ms
 ```
 
 ### Phase 5 — Live sim visualization
 
-**New:** `tools/eezy_sim.html` + small WS/SSE bridge from pose server (poll `STATUS` at 20 Hz is enough).
+**New:** `tools/eezy_sim.html` served by pose_server (reuse patterns from `fadegpt/webpendant.py` + fadebench-style **2D canvas**).
 
-Show: base + two links + end effector (simple Three.js or 2D side+top views). Drive from server joints, **not** from phone directly.
+**No Three.js / CDN dependency** in step 1. Drive the view from server joint state (STATUS/WS), not from the phone.
 
 | ID | Checkpoint | Pass when |
 |----|------------|-----------|
-| T5.1 | open page, run fake_phone circle | arm tip traces a visible circle |
-| T5.2 | pitch-only script | only wrist indicator rotates |
-| T5.3 | unreachable shove | arm freezes at workspace boundary; UI flags unreachable |
+| T5.1 | fake_phone circle | tip traces a visible path |
+| T5.2 | pitch-only | only wrist indicator rotates |
+| T5.3 | unreachable | freeze at boundary; UI shows unreachable/stale |
 
 **Checkpoint T5:** demoable without a physical phone or arm.
 
 ### Phase 6 — Minimal Xcode ARKit skeleton
 
-**New folder:** `ios/FadePose/` (SwiftUI + ARKit)
+**New folder:** `ios/FadePose/` (create project by hand in Xcode; commit Swift sources + Info keys, not necessarily a full `.xcodeproj` if fragile).
 
 App does **only**:
 
-1. ARWorldTrackingConfiguration (camera used internally; preview optional/minimal)
-2. Button **Start** → send `START`, zero relative pose
-3. Every frame (~60 Hz, throttle to 50 Hz): send `POSE t x y z qw qx qy qz`
-4. Button **Stop**
-5. Hardcoded host/port field (laptop IP)
-
-**No** object detection, depth UI, maps, or robot logic on device.
+1. `ARWorldTrackingConfiguration` (camera for VIO; optional minimal preview)
+2. Refuse **Start** unless tracking state is **normal**
+3. **Start** → `START`, zero relative pose
+4. Throttle to 50 Hz → `POSE … <track>`
+5. **Stop**; host/port fields (default 8463)
+6. Info: `NSCameraUsageDescription`, `NSLocalNetworkUsageDescription`
 
 | ID | Checkpoint | Pass when |
 |----|------------|-----------|
-| T6.1 | unit/host test with Network.framework mock | framing matches T1 |
-| T6.2 | on device + pose_server | move phone 10 cm on table → STATUS Δ position ≈ 0.10 m ± 2 cm |
-| T6.3 | tilt phone | q4 moves; position mostly stable if phone pivot is careful |
-| T6.4 | sim UI | same live page as T5 tracks the real phone |
+| T6.1 | golden-string | checked-in sample lines from the app contract are accepted by `pose_protocol` under `uv run pytest` (no XCTest required) |
+| T6.2 | on device | move phone 10 cm on table → STATUS Δ ≈ 0.10 m ± 2 cm |
+| T6.3 | tilt | q4 moves; position mostly stable |
+| T6.4 | sim UI | T5 page tracks the real phone |
 
 **Checkpoint T6:** end-to-end phone → IK → sim. Step 1 demo complete.
 
-### Phase 7 — Pi servo path (stub, same protocol)
+### Phase 7 — Pi servo path (optional; does not block T6)
 
-**New:** `fadegpt/eezy_servos.py` (pigpio or gpiozero PWM), `pose_server.py --hardware`
+**New:** `fadegpt/eezy_servos.py`, `pose_server.py --hardware`
+
+Measure link lengths and decide servo class **before** live torque. MG90S / published lengths remain **unverified** until then.
 
 | ID | Checkpoint | Pass when |
 |----|------------|-----------|
-| T7.1 | dry-run | `--hardware --dry-run` prints pulse widths for q1–q4, no GPIO |
-| T7.2 | single servo | base follows fake_phone yaw slowly, e-stop = process kill |
-| T7.3 | optional | full 3DOF tracks a slow 3 cm triangle; clipper motor OFF |
+| T7.1 | dry-run | `--hardware --dry-run` prints pulse widths; no GPIO |
+| T7.2 | single servo | base follows slow fake yaw; **physical e-stop in series with motor power** (process kill is **not** an e-stop) |
+| T7.3 | slow triangle | 3DOF air move ~3 cm; clipper motor OFF; 250 ms watchdog still zeroes commands |
 
-**Checkpoint T7:** optional for step 1; do not block T6.
+**Checkpoint T7:** optional.
 
 ---
 
-## Safety / product rules (encoded as tests where possible)
+## Safety / product rules
 
 - Mannequin / air only — no human cutting in step 1.
-- IK must refuse unreachable targets (T2.3, T3.6).
-- Rate-limit joint commands (max deg/s) even when phone jumps (T3.7).
-- Logs for teach/replay (if kept) still record **joint angles from the arm**, never raw phone pose — same philosophy as README §3.
+- IK refuses unreachable targets (T2.3, T2.4, T3.6); never clamp XYZ to fake a solution.
+- Slew-limit joints (T3.7).
+- **250 ms pose watchdog** (T4.5), independent of the phone process.
+- **Physical e-stop** in series with motor power (README §6). Software hold/zero is necessary but not sufficient.
+- Teach/replay logs (rail path) still record **arm encoders**, never phone pose.
 
 ---
 
-## What step 1 explicitly is / is not
+## What step 1 is / is not
 
-**Is:** CV removed; pose protocol; EEZY IK; fake phone; live sim; minimal ARKit Xcode app; optional Pi PWM stub.
+**Is:** pose protocol over UDP; EEZY FK/IK; mapper with frames/scale/watchdog; fake phone; canvas sim; minimal ARKit app; optional Pi PWM dry-run/live stub; pendant remains.
 
-**Is not:** full fade cutting physics on EEZY; rail/`phi` firmware; production BLE; vision critic; human cutting; calibrated hair-length control.
+**Is not:** deleting CV (none exists); replacing the rate pendant; full fade cutting on EEZY; rail stepper firmware changes; hanging a real clipper on MK1; Three.js CDN stack; trusting MG90S without measurement.
 
 ---
 
 ## Locked decisions
 
-1. Physical target = **EEZYbotARM** (Thingiverse 1015238), not the repo’s arc-rail design.
-2. **q4 wrist tilt** as a 4th sim channel (3DOF XYZ + tilt).
-3. Pose TCP port **`8463`** separate from legacy `:8462`.
-4. Implement **Phase 0→6** in order; Phase 7 optional.
+1. Physical target for this path = **EEZYbotARM** (sim + light tip); clipper mass is an open risk, not ignored.
+2. **q4** = phone pitch only; roll/yaw discarded.
+3. Pose transport = **UDP `:8463`**; newest-packet-wins; 250 ms watchdog.
+4. Default **scale = 0.3**.
+5. IK: unreachable / limit miss → **`None`**, never clamp.
+6. Rate pendant (`phone/`, `:8470`) and rail sim stay as a **parallel** path.
+7. Implement **Phase 0→6** in order; Phase 7 optional.
+8. Phase 5 UI = **2D canvas + existing WS patterns**, no Three.js in step 1.
+
+---
+
+## Open questions / risks
+
+- **Clipper payload vs EEZY MK1** capacity — need a heavier arm or a mock tip for demos.
+- **Servo class** (MG90S vs MG995/MG996R-class on shoulder) — measure before Phase 7.
+- **Stock gripper servo** — unused, removed, or replaced by the q4 tilt servo?
+- **Rail simulator body** (`head.py`, `cutting.py`, `profile.py`, ~75 tests) — kept parallel for the pendant/JOG product; retargeting to EEZY is out of step 1.
+- **Link lengths** — ship T2.0 published defaults; remeasure after print and update constants + hand FK ground truth together.
 
 ---
 
 ## Implementation order
 
-After approval, implement **one phase at a time**, tests first, stop at each checkpoint for a pass/fail check.
+One phase at a time, tests first, stop at each checkpoint for pass/fail. Start at Phase 0.
