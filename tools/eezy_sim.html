@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>EEZY pose sim</title>
+<style>
+  :root { color-scheme: light; --ink:#1a1a1a; --muted:#666; --ok:#2a7; --bad:#c33; }
+  body { margin:0; font:14px/1.4 ui-monospace,Menlo,monospace; background:#f4f2ee; color:var(--ink); }
+  header { padding:12px 16px; border-bottom:1px solid #ddd; display:flex; gap:16px; align-items:baseline; }
+  header strong { font-size:16px; }
+  #flags span { margin-right:12px; }
+  main { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:12px; }
+  canvas { width:100%; background:#fff; border:1px solid #ddd; border-radius:4px; }
+  pre { margin:0; padding:12px; background:#fff; border:1px solid #ddd; border-radius:4px;
+        grid-column:1 / -1; white-space:pre-wrap; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <strong>EEZY pose sim</strong>
+  <div id="flags">
+    <span id="mode">mode: —</span>
+    <span id="reach">reachable: —</span>
+    <span id="stale">stale: —</span>
+  </div>
+</header>
+<main>
+  <canvas id="top" width="480" height="360"></canvas>
+  <canvas id="side" width="480" height="360"></canvas>
+  <pre id="tele">waiting for WebSocket…</pre>
+</main>
+<script>
+const topC = document.getElementById('top');
+const sideC = document.getElementById('side');
+const tele = document.getElementById('tele');
+const L0=55, L2=80, L3=80;
+let trail = [];
+
+function rad(d){ return d*Math.PI/180; }
+function fk(q1,q2,q3){
+  const r = L2*Math.cos(rad(q2)) + L3*Math.cos(rad(q2+q3));
+  return {
+    x: r*Math.cos(rad(q1)),
+    y: r*Math.sin(rad(q1)),
+    z: L0 + L2*Math.sin(rad(q2)) + L3*Math.sin(rad(q2+q3)),
+    elbow: {
+      x: L2*Math.cos(rad(q2))*Math.cos(rad(q1)),
+      y: L2*Math.cos(rad(q2))*Math.sin(rad(q1)),
+      z: L0 + L2*Math.sin(rad(q2))
+    }
+  };
+}
+
+function drawTop(st){
+  const ctx = topC.getContext('2d');
+  const W=topC.width, H=topC.height, cx=W/2, cy=H/2, s=1.2;
+  ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle='#ccc'; ctx.beginPath();
+  ctx.moveTo(0,cy); ctx.lineTo(W,cy); ctx.moveTo(cx,0); ctx.lineTo(cx,H); ctx.stroke();
+  ctx.fillStyle='#999'; ctx.fillText('top (X right, Y up on page = arm +Y)', 8, 16);
+  const p = fk(st.q1, st.q2, st.q3);
+  trail.push({x:p.x, y:p.y}); if(trail.length>200) trail.shift();
+  ctx.strokeStyle='#8af'; ctx.beginPath();
+  trail.forEach((t,i)=>{ const X=cx+t.x*s, Y=cy-t.y*s; i?ctx.lineTo(X,Y):ctx.moveTo(X,Y); });
+  ctx.stroke();
+  ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=3; ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx+p.elbow.x*s, cy-p.elbow.y*s);
+  ctx.lineTo(cx+p.x*s, cy-p.y*s);
+  ctx.stroke(); ctx.lineWidth=1;
+  // wrist tilt indicator
+  ctx.strokeStyle='#c33'; ctx.beginPath();
+  const ang = rad(st.q4);
+  ctx.moveTo(cx+p.x*s, cy-p.y*s);
+  ctx.lineTo(cx+p.x*s + 20*Math.cos(ang), cy-p.y*s - 20*Math.sin(ang));
+  ctx.stroke();
+}
+
+function drawSide(st){
+  const ctx = sideC.getContext('2d');
+  const W=sideC.width, H=sideC.height, cx=40, cy=H-40, s=1.2;
+  ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle='#ccc'; ctx.beginPath();
+  ctx.moveTo(0,cy); ctx.lineTo(W,cy); ctx.moveTo(cx,0); ctx.lineTo(cx,H); ctx.stroke();
+  ctx.fillStyle='#999'; ctx.fillText('side (R horizontal, Z up)', 8, 16);
+  const p = fk(st.q1, st.q2, st.q3);
+  const r = Math.hypot(p.x,p.y), er = Math.hypot(p.elbow.x,p.elbow.y);
+  ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=3; ctx.beginPath();
+  ctx.moveTo(cx, cy - L0*s);
+  ctx.lineTo(cx + er*s, cy - p.elbow.z*s);
+  ctx.lineTo(cx + r*s, cy - p.z*s);
+  ctx.stroke(); ctx.lineWidth=1;
+  ctx.strokeStyle='#c33'; ctx.beginPath();
+  const ang = rad(st.q4);
+  ctx.moveTo(cx+r*s, cy-p.z*s);
+  ctx.lineTo(cx+r*s + 20*Math.cos(ang), cy-p.z*s - 20*Math.sin(ang));
+  ctx.stroke();
+}
+
+function render(st){
+  document.getElementById('mode').textContent = 'mode: '+st.mode;
+  const r = document.getElementById('reach');
+  r.textContent = 'reachable: '+st.reachable;
+  r.className = st.reachable ? 'ok' : 'bad';
+  const s = document.getElementById('stale');
+  s.textContent = 'stale: '+st.stale;
+  s.className = st.stale ? 'bad' : 'ok';
+  tele.textContent = JSON.stringify(st, null, 2);
+  drawTop(st); drawSide(st);
+}
+
+function connect(){
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(proto + '://' + location.host + '/ws');
+  ws.onmessage = (ev) => { try { render(JSON.parse(ev.data)); } catch(e){} };
+  ws.onclose = () => setTimeout(connect, 1000);
+}
+connect();
+</script>
+</body>
+</html>
