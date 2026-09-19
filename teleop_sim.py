@@ -52,6 +52,8 @@ class TeleopServer:
         self._running = True
         self.packets = 0
         self.rejected = 0
+        self.last_error = ""       # why the newest bad packet was refused
+        self.last_bad_line = ""
         self.last_rx = 0.0
         self.phone = (0.0, 0.0, 0.0)
         self.saved: list[Path] = []
@@ -76,8 +78,13 @@ class TeleopServer:
         try:
             msg = parse_message(line)
             ack = self.session.handle(msg)
-        except PoseProtocolError:
-            self.rejected += 1
+        except PoseProtocolError as e:
+            with self._lock:
+                self.rejected += 1
+                if str(e) != self.last_error:
+                    print(f"  ! rejected: {e}   <- {line[:70]}")
+                self.last_error = str(e)
+                self.last_bad_line = line[:70]
             return
         try:
             self.sock.sendto(ack.encode(), addr)
@@ -150,6 +157,8 @@ class TeleopServer:
                 "teleop": self.teleop.status(),
                 "packets": self.packets,
                 "rejected": self.rejected,
+                "last_error": self.last_error,
+                "last_bad_line": self.last_bad_line,
                 "stale": stale,
                 "clipper": bool(self.rig.clipper_on),
                 "takes": len(self.saved),
@@ -161,8 +170,12 @@ class TeleopServer:
 
 
 def serve_viewer(server: TeleopServer, http_port: int) -> ThreadingHTTPServer:
-    page = (VIEWER.read_text() if VIEWER.exists()
-            else "<h1>tools/arm_sim.html is missing</h1>")
+    def page_bytes() -> bytes:
+        # read per request: editing the viewer then refreshing the browser is
+        # the whole iteration loop, and the file is a few KB
+        if VIEWER.exists():
+            return VIEWER.read_bytes()
+        return b"<h1>tools/arm_sim.html is missing</h1>"
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):
@@ -187,7 +200,7 @@ def serve_viewer(server: TeleopServer, http_port: int) -> ThreadingHTTPServer:
                         time.sleep(0.04)
                 except OSError:
                     return
-            body = page.encode()
+            body = page_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))

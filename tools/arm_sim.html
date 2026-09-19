@@ -48,6 +48,10 @@
   .kv span:last-child { color:var(--ink); font-variant-numeric:tabular-nums; }
   #err { position:fixed; inset:0; display:none; place-items:center; text-align:center;
          padding:30px; color:var(--muted); }
+  .tag { position:fixed; transform:translate(-50%,-50%); pointer-events:none;
+         font-size:10px; font-weight:700; letter-spacing:.09em; white-space:nowrap;
+         padding:3px 7px; border-radius:5px; background:rgba(14,17,22,0.78);
+         border:1px solid currentColor; }
 </style>
 </head>
 <body>
@@ -83,6 +87,13 @@ Three.js could not be fetched — check the network, then reload.</div></div>
   <div class="kv" style="margin-top:8px"><span>packets</span><span id="pk">0</span></div>
   <div class="kv"><span>rejected</span><span id="rj">0</span></div>
   <div class="kv"><span>takes</span><span id="tk">0</span></div>
+  <div id="errBox" hidden style="margin-top:9px;padding-top:9px;border-top:1px solid var(--line)">
+    <div style="color:var(--bad);font-size:10.5px;letter-spacing:.06em">REJECTING</div>
+    <div id="errMsg" style="font-size:11px;color:var(--ink);margin-top:3px;
+         word-break:break-word"></div>
+    <div id="errLine" style="font-size:10px;color:var(--muted);margin-top:4px;
+         word-break:break-all"></div>
+  </div>
 </div>
 
 <div class="hud" id="foot">
@@ -248,6 +259,33 @@ Three.js could not be fetched — check the network, then reload.</div></div>
     }
   });
 
+  // --- in-scene labels: which lump is which
+  function makeTag(text, color) {
+    const el = document.createElement("div");
+    el.className = "tag"; el.textContent = text; el.style.color = color;
+    document.body.appendChild(el);
+    return el;
+  }
+  const TAGS = [
+    {el: makeTag("YOUR PHONE", "#bc8cff"), obj: ghost,    off: 0.30},
+    {el: makeTag("CARRIAGE",   "#58a6ff"), obj: carriage, off: 0.34},
+    {el: makeTag("CLIPPER",    "#f0883e"), obj: tipMarker, off: -0.17},
+    {el: makeTag("HEAD",       "#7d8b9c"), obj: head,     off: 1.15},
+  ];
+  const _v = new THREE.Vector3();
+  function placeTags() {
+    for (const t of TAGS) {
+      if (t.obj === ghost && !ghost.visible) { t.el.style.display = "none"; continue; }
+      t.obj.getWorldPosition(_v);
+      _v.y += t.off;
+      _v.project(camera);
+      if (_v.z > 1) { t.el.style.display = "none"; continue; }
+      t.el.style.display = "block";
+      t.el.style.left = ((_v.x * 0.5 + 0.5) * innerWidth) + "px";
+      t.el.style.top = ((-_v.y * 0.5 + 0.5) * innerHeight) + "px";
+    }
+  }
+
   // --- telemetry
   let st = null;
   function connect() {
@@ -286,6 +324,12 @@ Three.js could not be fetched — check the network, then reload.</div></div>
     $("pk").textContent = st.packets;
     $("rj").textContent = st.rejected;
     $("tk").textContent = st.takes;
+    const bad = st.rejected > 0 && st.packets === 0 && st.last_error;
+    $("errBox").hidden = !bad;
+    if (bad) {
+      $("errMsg").textContent = st.last_error;
+      $("errLine").textContent = st.last_bad_line;
+    }
 
     ghost.position.set(1.9 + st.phone.x * 2, st.phone.y * 2, st.phone.z * 2);
     ghost.visible = t.engaged;
@@ -316,6 +360,8 @@ Three.js could not be fetched — check the network, then reload.</div></div>
     camera.position.set(dist*Math.cos(el)*Math.sin(az), dist*Math.sin(el),
                         dist*Math.cos(el)*Math.cos(az));
     camera.lookAt(0, -0.15, 0);
+    camera.updateMatrixWorld();
+    placeTags();
     renderer.render(scene, camera);
     requestAnimationFrame(loop);
   }
