@@ -179,6 +179,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = V5BN72QP9A;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Used only for ARKit world tracking, to measure how far the phone has moved. Frames are never stored or sent.";
@@ -206,6 +207,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = V5BN72QP9A;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Used only for ARKit world tracking, to measure how far the phone has moved. Frames are never stored or sent.";
@@ -231,20 +233,20 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		FA0E0000000000000000AA0B /* Build configuration list for PBXProject "FadePose" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				FA0E0000000000000000AA0C /* Debug */,
-				FA0E0000000000000000AA0D /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		FA0E0000000000000000AA07 /* Build configuration list for PBXNativeTarget "FadePose" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				FA0E0000000000000000AA0E /* Debug */,
 				FA0E0000000000000000AA0F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		FA0E0000000000000000AA0B /* Build configuration list for PBXProject "FadePose" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FA0E0000000000000000AA0C /* Debug */,
+				FA0E0000000000000000AA0D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
