@@ -96,6 +96,7 @@ class PoseServer:
         with self._lock:
             self.player = player
             self.playing_name = name
+            self._play_t0 = time.monotonic()
 
     def stop_playback(self) -> None:
         with self._lock:
@@ -109,7 +110,9 @@ class PoseServer:
             player = self.player
         if player is None:
             return
-        pose = player.next_pose()
+        with self._lock:
+            t0 = getattr(self, "_play_t0", time.monotonic())
+        pose = player.pose_at(int((time.monotonic() - t0) * 1000))
         if pose is None:
             self.stop_playback()
             return
@@ -118,7 +121,6 @@ class PoseServer:
             self.mapper._reachable = True
         if self.hardware is not None:
             self.hardware.set_joints(*pose)
-        self.recorder.tick(*pose, True)
 
     def status_dict(self) -> dict:
         """Pure read of current state (no side effects)."""
@@ -176,8 +178,15 @@ class PoseServer:
             with self._lock:
                 self._last_pose_mono = time.monotonic()
                 self._stale = False
-                st = self.mapper.update(self.session.relative)
                 self.received += 1
+                if self.player is not None:
+                    # A saved cut is running. The phone is almost certainly
+                    # still streaming — it is in the operator's hand or on the
+                    # bench — and letting it drive would overwrite the replay
+                    # 50 times a second, which looks exactly like the arm
+                    # freezing wherever the phone happens to be pointing.
+                    return ack
+                st = self.mapper.update(self.session.relative)
                 if self.hardware is not None:
                     with trace.span("robot.servo", "write joint angles"):
                         self.hardware.set_joints(st.q1, st.q2, st.q3, st.q4)

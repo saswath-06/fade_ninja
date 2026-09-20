@@ -85,15 +85,20 @@ def test_chart_summary_is_downsampled(store):
 
 # -------------------------------------------------------------- recording
 
-def test_recorder_ticks_at_the_log_rate():
+def test_recorder_stamps_real_elapsed_time():
+    """Ticks arrive with pose packets, which do not land on a 20ms grid.
+    Assuming they do compressed a 4s cut into 3.3s and replayed it fast."""
+    import time
     r = JointRecorder()
     r.start()
-    for i in range(50):
+    for _ in range(5):
         r.tick(0, 45, -90, 0)
+        time.sleep(0.03)
     rows = r.stop()
-    assert len(rows) == 50
-    assert [x[0] for x in rows[:3]] == [0, 20, 40]
-    assert rows[-1][0] == 980
+    assert len(rows) == 5
+    stamps = [x[0] for x in rows]
+    assert stamps == sorted(set(stamps)), "timestamps must strictly rise"
+    assert 100 <= stamps[-1] <= 260, f"should reflect ~120ms of real time, got {stamps[-1]}"
 
 
 def test_recorder_ignores_ticks_before_start():
@@ -163,3 +168,22 @@ def test_tracing_is_a_no_op_without_a_dsn():
         assert t is None
     trace.breadcrumb("link stale", level="warning")   # must not raise
     trace.measure("tracking_lag", 12.5)
+
+
+def test_replay_follows_the_recorded_timeline():
+    """A cut recorded over 2s must take about 2s to replay, whatever rate the
+    playback loop happens to tick at."""
+    rows = [(i * 40, 0.0, 45.0, -90.0, 0.0, True) for i in range(50)]  # 25 Hz, 2s
+    p = TakePlayer(rows, smooth_first=False)
+    assert p.pose_at(0) is not None
+    assert p.pose_at(1000) is not None
+    assert p.pose_at(1960) is not None
+    assert p.pose_at(2200) is None, "should finish at the recorded duration"
+
+
+def test_replay_holds_each_sample_until_its_time():
+    rows = [(0, 1.0, 45.0, -90.0, 0.0, True), (500, 2.0, 45.0, -90.0, 0.0, True)]
+    p = TakePlayer(rows, smooth_first=False)
+    assert p.pose_at(0)[0] == pytest.approx(1.0)
+    assert p.pose_at(250)[0] == pytest.approx(1.0), "second sample came early"
+    assert p.pose_at(500)[0] == pytest.approx(2.0)

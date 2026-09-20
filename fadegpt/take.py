@@ -12,6 +12,7 @@ wrong answer.
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -51,19 +52,30 @@ class JointRecorder:
         self.recording = False
         self._samples: list[Sample] = []
         self._t_ms = 0
+        self._t0 = 0.0
 
     def start(self) -> None:
         self._samples = []
         self._t_ms = 0
+        self._t0 = time.monotonic()
         self.recording = True
 
     def tick(self, q1: float, q2: float, q3: float, q4: float,
              reachable: bool = True) -> None:
+        """Stamp with REAL elapsed time.
+
+        Ticks arrive with the pose packets, and those do not land on a
+        perfect 20 ms grid — assuming they do compresses the recording, so a
+        4 s cut plays back as 3.3 s and every saved cut runs fast.
+        """
         if not self.recording:
             return
-        self._samples.append(Sample(self._t_ms, float(q1), float(q2),
+        t_ms = int((time.monotonic() - self._t0) * 1000)
+        if self._samples and t_ms <= self._samples[-1].t_ms:
+            t_ms = self._samples[-1].t_ms + 1      # keep it strictly rising
+        self._samples.append(Sample(t_ms, float(q1), float(q2),
                                     float(q3), float(q4), bool(reachable)))
-        self._t_ms += TICK_MS
+        self._t_ms = t_ms
 
     def stop(self) -> list[tuple]:
         self.recording = False
@@ -169,10 +181,31 @@ class TakePlayer:
         return 0.0 if not self.rows else min(1.0, self.i / len(self.rows))
 
     def next_pose(self) -> tuple[float, float, float, float] | None:
+        """Advance one sample, ignoring timing. Used where the caller owns
+        the clock (tests, offline analysis)."""
         if self.done:
             return None
         r = self.rows[self.i]
         self.i += 1
+        return (r[1], r[2], r[3], r[4])
+
+    def pose_at(self, elapsed_ms: int) -> tuple[float, float, float, float] | None:
+        """The pose this cut should be holding `elapsed_ms` after it started.
+
+        Replaying one sample per fixed tick would run the cut at whatever
+        rate the ticks happen to fire, not the rate it was recorded at. The
+        take carries real timestamps, so honour them.
+        """
+        if not self.rows:
+            return None
+        while (self.i < len(self.rows) - 1
+               and self.rows[self.i + 1][0] <= elapsed_ms):
+            self.i += 1
+        last = self.rows[-1]
+        if elapsed_ms > last[0]:
+            self.i = len(self.rows)
+            return None
+        r = self.rows[self.i]
         return (r[1], r[2], r[3], r[4])
 
 
