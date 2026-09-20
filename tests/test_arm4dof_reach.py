@@ -176,3 +176,82 @@ def test_tracking_lag_stays_responsive():
         if math.dist(fk(st.q1, st.q2, st.q3), target) < 1.0:
             break
     assert t < 0.45, f"took {t:.2f}s to catch up with the hand"
+
+
+# ------------------------------------------------- operator frame alignment
+
+def _heading(Ro):
+    """Mirrors the Swift in ios/FadePose: heading from the camera's forward
+    axis, falling back to the phone's top edge when it points up or down."""
+    f = [-Ro[0][2], -Ro[1][2], -Ro[2][2]]
+    if math.hypot(f[0], f[2]) < 0.15:
+        f = [Ro[0][1], Ro[1][1], Ro[2][1]]
+    return math.atan2(f[0], -f[2])
+
+
+def _correct(Ro, world_delta):
+    th = _heading(Ro)
+    ca, sa = math.cos(th), math.sin(th)
+    dx, dy, dz = world_delta
+    return (dx * ca + dz * sa, dy, -dx * sa + dz * ca)
+
+
+def _rot_y(deg):
+    a = math.radians(deg)
+    return [[math.cos(a), 0, math.sin(a)], [0, 1, 0], [-math.sin(a), 0, math.cos(a)]]
+
+
+def _rot_x(deg):
+    a = math.radians(deg)
+    return [[1, 0, 0], [0, math.cos(a), -math.sin(a)], [0, math.sin(a), math.cos(a)]]
+
+
+def _mul(A, B):
+    return [[sum(A[i][k] * B[k][j] for k in range(3)) for j in range(3)]
+            for i in range(3)]
+
+
+def _col(M, j):
+    v = [M[0][j], M[1][j], M[2][j]]
+    return v
+
+
+def _horiz(v):
+    h = [v[0], 0.0, v[2]]
+    n = math.hypot(h[0], h[2])
+    return [h[0] / n, 0.0, h[2] / n] if n > 1e-9 else h
+
+
+ORIENTATIONS = [
+    ("upright facing forward", [[1, 0, 0], [0, 1, 0], [0, 0, 1]]),
+    ("upright turned 40", _rot_y(40)),
+    ("upright turned -115", _rot_y(-115)),
+    ("flat screen up", _rot_x(-90)),
+    ("flat turned 40", _mul(_rot_y(40), _rot_x(-90))),
+    ("tilted 45 down", _rot_x(-45)),
+    ("tilted down turned 70", _mul(_rot_y(70), _rot_x(-60))),
+]
+
+
+@pytest.mark.parametrize("name,Ro", ORIENTATIONS)
+def test_operator_axes_map_to_one_arm_axis_each(name, Ro):
+    """However the phone is held, moving along the operator's own up / right
+    / forward must land on exactly one axis.
+
+    The app used to send inverse(origin) * current, i.e. movement in the
+    origin CAMERA's axes — so holding the phone flat made 'up' arrive as
+    forward, which yawed the arm instead of raising it.
+    """
+    fwd = _horiz([-c for c in _col(Ro, 2)])
+    if math.hypot(fwd[0], fwd[2]) < 0.15:
+        fwd = _horiz(_col(Ro, 1))
+    body = {"up": [0.0, 1.0, 0.0], "right": _horiz(_col(Ro, 0)), "forward": fwd}
+    expect = {"up": 1, "right": 0, "forward": 2}      # -> y, x, z
+    for move, world in body.items():
+        got = _correct(Ro, world)
+        dominant = max(range(3), key=lambda i: abs(got[i]))
+        assert dominant == expect[move], f"{name}: {move} landed on {'xyz'[dominant]}"
+        assert abs(got[dominant]) == pytest.approx(1.0, abs=1e-5)
+        for i in range(3):
+            if i != dominant:
+                assert abs(got[i]) < 1e-5, f"{name}: {move} bled into {'xyz'[i]}"

@@ -112,9 +112,29 @@ final class PoseStreamer: NSObject, ObservableObject, ARSessionDelegate {
         guard let o = origin else { return }
 
         let rel = simd_mul(simd_inverse(o), t)
-        let x = rel.columns.3.x
-        let y = rel.columns.3.y
-        let z = rel.columns.3.z
+
+        // Position must be sent in a GRAVITY-ALIGNED frame. inverse(o)*t
+        // expresses movement in the origin CAMERA's own axes, so holding the
+        // phone anything but upright-and-forward permutes up/right/forward —
+        // moving up would yaw the arm, moving right would raise it.
+        // ARKit's world +Y is always up, so take the world delta and remove
+        // only the origin's heading, which keeps "forward" meaning the way
+        // you were facing when you pressed Start.
+        let dw = t.columns.3 - o.columns.3
+        var fwd = SIMD3<Float>(-o.columns.2.x, -o.columns.2.y, -o.columns.2.z)
+        if hypotf(fwd.x, fwd.z) < 0.15 {
+            // camera is pointing straight up or down (phone lying flat), so
+            // it has no usable heading: use the phone's top edge instead
+            fwd = SIMD3<Float>(o.columns.1.x, o.columns.1.y, o.columns.1.z)
+        }
+        let heading = atan2f(fwd.x, -fwd.z)
+        let ca = cosf(heading), sa = sinf(heading)
+        let x = dw.x * ca + dw.z * sa
+        let y = dw.y
+        let z = -dw.x * sa + dw.z * ca
+
+        // orientation stays relative to Start, so tilt re-zeros when you
+        // press Start and the cut angle is measured from however you hold it
         let q = simd_quatf(rel)
         let tMs = Int(frame.timestamp * 1000) % 1_000_000_000
         let line = String(
