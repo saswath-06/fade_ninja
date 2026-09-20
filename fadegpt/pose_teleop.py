@@ -13,11 +13,18 @@ two-step inverse kinematics —
     joints       = direction of that point, as elevation and azimuth
 
 Hand movement is resolved into the two directions the machine can actually
-move and converted by arc length, so 10 cm of hand travel is 10 cm of
-clipper travel across the scalp:
+move. How much joint travel that buys depends on the mode:
 
-    vertical hand motion   -> phi, at radius R
-    horizontal hand motion -> psi, along the latitude circle (radius R*cos el)
+**proportional** (default) maps a natural gesture onto the arm's whole
+workspace. The rail only has 132 mm of vertical travel and 339 mm around the
+head, while an arm gesture is comfortably 300-500 mm, so millimetre-exact
+motion pins the arm at its end stop almost immediately. Here a movement of
+`hand_span_mm` covers the full range of an axis, and the arm mirrors the
+shape of your gesture across everything it can reach.
+
+**metric** is millimetre-exact: 10 cm of hand travel is 10 cm of clipper
+travel across the scalp (phi on the rail arc, psi along the latitude
+circle). True to scale, but you run out of rail quickly.
 
 The component toward or away from the head is discarded — the rail fixes
 stand-off distance and the spring slide absorbs the rest, so pushing at the
@@ -99,8 +106,11 @@ def inverse_kinematics(x: float, y: float, z: float) -> tuple[float, float]:
 
 @dataclass
 class TeleopConfig:
-    """scale 1.0 means the tip moves exactly as far as your hand does."""
-    scale: float = 1.0
+    """mode "proportional": hand_span_mm of movement sweeps a whole axis.
+    mode "metric": the tip moves exactly as far as your hand does."""
+    mode: str = "proportional"
+    hand_span_mm: float = 400.0     # gesture that covers an axis end to end
+    scale: float = 1.0              # extra multiplier on top of the mode
     auto_align: bool = True         # on engage, make "push forward" mean "toward the head"
     yaw_offset_deg: float = 0.0     # extra trim on top of auto-align
     theta_gain: float = 1.0         # wrist pitch -> clipper tilt, 1:1
@@ -212,14 +222,21 @@ class PoseTeleop:
         el = math.radians(a_phi + EL_OFFSET_DEG)
         ps = math.radians(a_psi)
 
-        # vertical travel rides the arc of radius r
-        d_phi = math.degrees(dy / r)
-
-        # horizontal travel rides the latitude circle, radius r*cos(el).
-        # the tangent that increases psi:
+        # the tangent that increases psi
         along = dx * -math.sin(ps) + dz * math.cos(ps)
-        lat_r = max(r * math.cos(el), 1.0)       # guarded; el stays well off the pole
-        d_psi = math.degrees(along / lat_r)
+
+        if self.cfg.mode == "metric":
+            # millimetre-exact: vertical rides the arc of radius r, horizontal
+            # rides the latitude circle of radius r*cos(el)
+            d_phi = math.degrees(dy / r)
+            lat_r = max(r * math.cos(el), 1.0)   # guarded; el stays off the pole
+            d_psi = math.degrees(along / lat_r)
+        else:
+            # proportional: a hand_span_mm gesture sweeps a whole axis, so the
+            # arm mirrors the gesture across everything it can reach
+            span = max(self.cfg.hand_span_mm, 1.0)
+            d_phi = (dy / span) * (HI[0] - LO[0])
+            d_psi = (along / span) * (HI[1] - LO[1])
 
         return (a_phi + d_phi, a_psi + d_psi)
 

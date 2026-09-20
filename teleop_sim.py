@@ -216,23 +216,35 @@ def serve_viewer(server: TeleopServer, http_port: int) -> ThreadingHTTPServer:
 def make_config(args) -> TeleopConfig:
     """Split out so the CLI's mapping onto TeleopConfig is testable: the
     server tests build TeleopServer directly and would not catch a rename."""
-    return TeleopConfig(scale=args.scale,
+    return TeleopConfig(mode="metric" if args.metric else "proportional",
+                        hand_span_mm=args.hand_span,
+                        scale=args.scale,
                         yaw_offset_deg=args.yaw_offset,
                         auto_align=not args.no_auto_align)
 
 
-def main(argv=None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--port", type=int, default=DEFAULT_UDP_PORT)
     ap.add_argument("--http-port", type=int, default=DEFAULT_HTTP_PORT)
     ap.add_argument("--hardware", metavar="SERIAL_PORT")
+    ap.add_argument("--hand-span", type=float, default=400.0,
+                    help="mm of hand movement that sweeps a whole axis "
+                         "(smaller = more sensitive)")
+    ap.add_argument("--metric", action="store_true",
+                    help="millimetre-exact motion instead of proportional; "
+                         "true to scale but the rail is only 13cm of travel")
     ap.add_argument("--scale", type=float, default=1.0,
-                    help="hand travel to clipper travel; 1.0 is 1:1")
+                    help="extra multiplier on top of the mode")
     ap.add_argument("--yaw-offset", type=float, default=0.0,
                     help="trim, in degrees, if left/right feels rotated")
     ap.add_argument("--no-auto-align", action="store_true",
                     help="do not point 'forward' at the head on engage")
-    args = ap.parse_args(argv)
+    return ap
+
+
+def main(argv=None) -> int:
+    args = build_parser().parse_args(argv)
 
     if args.hardware:
         from fadegpt.hardware_arm import ArmConfig, HardwareArm

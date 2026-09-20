@@ -51,6 +51,9 @@ def arc_mm(j0, j1):
     return RAIL_RADIUS_MM * math.hypot(d_phi, math.cos(el) * d_psi)
 
 
+METRIC = TeleopConfig(mode="metric")
+
+
 def engaged(phi=30.0, psi=90.0, theta=15.0, q=LEVEL, cfg=None):
     t = PoseTeleop(cfg)
     t.engage(0.0, 0.0, 0.0, phi, psi, theta, *q)
@@ -108,8 +111,8 @@ def test_forward_axis_is_minus_z_when_level():
 # ------------------------------------------- the point: hand-to-tip is 1:1
 
 @pytest.mark.parametrize("hand_mm", [20.0, 50.0, 100.0])
-def test_tip_travels_exactly_as_far_as_the_hand(hand_mm):
-    t = engaged(phi=35.0, psi=90.0)
+def test_metric_mode_moves_the_tip_exactly_as_far_as_the_hand(hand_mm):
+    t = engaged(phi=35.0, psi=90.0, cfg=METRIC)
     start = (35.0, 90.0)
     right = rotate(LEVEL, (1.0, 0.0, 0.0))
     j = t.update(*[c * hand_mm / 1000.0 for c in right], *LEVEL)
@@ -117,7 +120,7 @@ def test_tip_travels_exactly_as_far_as_the_hand(hand_mm):
 
 
 def test_scale_shrinks_the_motion_proportionally():
-    t = engaged(phi=35.0, cfg=TeleopConfig(scale=0.5))
+    t = engaged(phi=35.0, cfg=TeleopConfig(mode="metric", scale=0.5))
     j = t.update(0.10, 0.0, 0.0, *LEVEL)
     assert arc_mm((35.0, 90.0), j) == pytest.approx(50.0, rel=1e-9)
 
@@ -137,7 +140,7 @@ def test_hand_down_descends():
 def test_pushing_at_the_head_barely_moves_the_arm():
     """Stand-off is the rail's job and the spring slide's; the arm should not
     chase a hand pressed toward the scalp."""
-    t = engaged(phi=20.0, psi=90.0)          # tip points along +Z
+    t = engaged(phi=20.0, psi=90.0, cfg=METRIC)          # tip points along +Z
     toward = (0.0, 0.0, -0.08)               # straight at the head centre
     j = t.update(*toward, *LEVEL)
     assert arc_mm((20.0, 90.0), j) < 0.2 * 80.0
@@ -248,3 +251,47 @@ def test_tracking_recovers_without_a_jump():
     a = t.update(0.0, 0.02, 0.0, *LEVEL)
     assert t.update(0.0, 0.30, 0.0, *LEVEL, track=1) is None
     assert t.update(0.0, 0.02, 0.0, *LEVEL) == pytest.approx(a)
+
+
+# ------------------------------------------------------- proportional mode
+
+def test_a_full_gesture_sweeps_a_whole_axis():
+    """The rail has only 132 mm of vertical travel, so the default maps a
+    natural gesture onto the whole range instead of pinning at the end."""
+    span = TeleopConfig().hand_span_mm / 1000.0
+    t = engaged(phi=0.0, psi=90.0)
+    phi, _, _ = t.update(0.0, span, 0.0, *LEVEL)
+    assert phi == pytest.approx(HI[0], abs=1e-6)
+
+
+def test_half_a_gesture_reaches_half_the_axis():
+    span = TeleopConfig().hand_span_mm / 1000.0
+    t = engaged(phi=0.0, psi=90.0)
+    phi, _, _ = t.update(0.0, span / 2, 0.0, *LEVEL)
+    assert phi == pytest.approx((HI[0] - LO[0]) / 2, abs=1e-6)
+
+
+def test_a_small_lift_does_not_pin_the_arm():
+    """The complaint that prompted this mode: 10 cm used to exhaust the rail."""
+    t = engaged(phi=35.0, psi=90.0)
+    phi, _, _ = t.update(0.0, 0.10, 0.0, *LEVEL)
+    assert LO[0] < phi < HI[0]
+    assert not t.status()["clamped"]["phi"]
+
+
+def test_hand_span_sets_sensitivity():
+    twitchy = engaged(phi=0.0, cfg=TeleopConfig(hand_span_mm=200.0))
+    calm = engaged(phi=0.0, cfg=TeleopConfig(hand_span_mm=800.0))
+    assert twitchy.update(0.0, 0.1, 0.0, *LEVEL)[0] > \
+        calm.update(0.0, 0.1, 0.0, *LEVEL)[0]
+
+
+def test_proportional_mode_still_auto_aligns():
+    results = []
+    for heading in (0, 120, -75):
+        q = yaw_quat(heading)
+        t = engaged(phi=30.0, psi=90.0, q=q)
+        right = rotate(q, (1.0, 0.0, 0.0))
+        j = t.update(*[c * 0.12 for c in right], *q)
+        results.append((round(j[0], 4), round(j[1], 4)))
+    assert all(r == results[0] for r in results), results
