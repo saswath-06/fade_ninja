@@ -14,7 +14,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from fade_ninja.eezy_servos import ServoDriver
+from fade_ninja.servo_link import ServoConfig, ServoDriver
 from fade_ninja.dashboard_api import ApiError, DashboardAPI
 from fade_ninja.store import Store
 from fade_ninja.take import JointRecorder
@@ -351,6 +351,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--port", type=int, default=DEFAULT_PORT)
     p.add_argument("--http-port", type=int, default=SIM_HTTP_PORT)
     p.add_argument("--scale", type=float, default=0.3)
+    p.add_argument("--servo-port", default=None, metavar="SERIAL_PORT",
+                   help="drive real servos through an Arduino, "
+                        "e.g. --servo-port /dev/ttyACM0")
     p.add_argument("--trace", action="store_true",
                    help="send control-loop timing to Sentry (needs SENTRY_DSN)")
     p.add_argument("--no-dashboard", action="store_true",
@@ -372,9 +375,13 @@ def main(argv: list[str] | None = None) -> None:
         print("Tracing   requested but SENTRY_DSN is unset — continuing without")
 
     hw = None
-    if args.hardware or args.dry_run:
-        hw = ServoDriver(dry_run=True if args.dry_run or not args.hardware
-                         else False)
+    if args.servo_port:
+        hw = ServoDriver.open(ServoConfig(port=args.servo_port))
+        hw.home()                      # ease to the safe pose before anything
+        print(f"Servos    {args.servo_port} (homed to the safe pose)")
+    elif args.hardware or args.dry_run:
+        hw = ServoDriver(dry_run=True)
+        print("Servos    dry run (pulse widths printed, nothing moves)")
 
     srv = PoseServer(host=args.host, port=args.port, scale=args.scale,
                      hardware=hw, slew=args.slew)

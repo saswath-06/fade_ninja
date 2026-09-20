@@ -294,6 +294,33 @@ unchanged.
 link goes stale. Without a DSN every tracing helper is a no-op, so the robot
 gains no hard dependency on it.
 
+### Driving real servos (`servo_link.py`, `firmware/fade_ninja_servos/`)
+
+```
+uv run python pose_server.py --servo-port /dev/ttyACM0   # real servos
+uv run python pose_server.py --dry-run                   # print pulses only
+```
+
+Four joint angles go down a serial line at 115200 and the Arduino does the
+PWM. `FakeServoBoard` speaks the firmware's side in Python, so the driver is
+fully testable with no board attached, and the reference sketch has something
+unambiguous to match.
+
+Three guards, duplicated on both sides on purpose, because the laptop can
+crash mid-command and the horn is the last line:
+
+- **limits** clamped on the laptop and again on the board
+- **easing**: a servo snaps to its first pulse and the arm may be resting
+  anywhere, so movement is capped per tick and the arm eases to the target
+- **freeze holds, it does not detach** — a limp arm falls under its own
+  weight. `relax()` is the explicit way to let go.
+
+`ServoCal` (pulse range, direction, offset) is per servo and is **not
+guessed** — horn angle and end-stops differ for every build. Measure them
+with `tools/servo_calibrate.py` and paste the numbers into both the config
+and the sketch. Servos need their own supply with a common ground; four
+stalling on USB power will brown out the board. The e-stop stays physical.
+
 ### Hardware path (Pi 4 + Arduino)
 
 The Pi runs this Python stack unchanged; the Arduino
