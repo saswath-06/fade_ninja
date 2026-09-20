@@ -9,6 +9,7 @@ Two operator-visible properties:
    freezing it mid-pose with the elbow folded.
 """
 import math
+import pathlib
 
 import pytest
 
@@ -314,3 +315,13 @@ def test_the_old_relative_quaternion_would_have_leaked():
     RoT = [[Ro[j][i] for j in range(3)] for i in range(3)]
     leaked = pitch_deg_from_quat(*_quat_from_R(_mul(RoT, Rc)))
     assert abs(leaked) > 20.0, "the old path should show a large false tilt"
+
+
+def test_positive_cut_angle_means_the_clipper_tips_up():
+    """The viewer rotated the tool by -q4, so a nose-up phone rendered the
+    clipper tipping down. The tool model points along +X and a positive
+    rotation about +Z lifts +X toward +Y, so the sign must be +q4."""
+    page = (pathlib.Path(__file__).resolve().parent.parent
+            / "tools" / "arm4dof_sim.html").read_text()
+    assert "wrist.rotation.set(0, Math.atan2(s1, c1), q4*D2R" in page
+    assert "-q4*D2R" not in page

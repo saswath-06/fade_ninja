@@ -23,6 +23,8 @@ final class PoseStreamer: NSObject, ObservableObject, ARSessionDelegate {
     @Published var streaming = false
     @Published var trackingLabel = "—"
     @Published var trackingNormal = false
+    /// While held, the arm holds its position and only the cut angle moves.
+    @Published var tiltOnly = false
 
     private let session = ARSession()
     private var connection: NWConnection?
@@ -31,6 +33,12 @@ final class PoseStreamer: NSObject, ObservableObject, ARSessionDelegate {
     private let sendInterval: TimeInterval = 0.02  // 50 Hz
     private var sessionRunning = false
     private var startSent = false
+    /// Position delta frozen while tiltOnly is held, so the arm parks.
+    private var frozenDelta: SIMD3<Float>?
+    /// Offset that keeps position continuous after releasing tiltOnly —
+    /// without it, letting go would snap the arm to wherever the hand
+    /// drifted while locked.
+    private var posOffset = SIMD3<Float>(repeating: 0)
 
     override init() {
         super.init()
@@ -72,6 +80,8 @@ final class PoseStreamer: NSObject, ObservableObject, ARSessionDelegate {
         }
         origin = nil
         startSent = false
+        frozenDelta = nil
+        posOffset = SIMD3<Float>(repeating: 0)
         streaming = true
         status = "streaming"
         UIApplication.shared.isIdleTimerDisabled = true
@@ -80,6 +90,8 @@ final class PoseStreamer: NSObject, ObservableObject, ARSessionDelegate {
     func stopStreaming() {
         streaming = false
         startSent = false
+        frozenDelta = nil
+        posOffset = SIMD3<Float>(repeating: 0)
         sendLine("STOP")
         origin = nil
         status = "stopped"
@@ -120,7 +132,22 @@ final class PoseStreamer: NSObject, ObservableObject, ARSessionDelegate {
         // ARKit's world +Y is always up, so take the world delta and remove
         // only the origin's heading, which keeps "forward" meaning the way
         // you were facing when you pressed Start.
-        let dw = t.columns.3 - o.columns.3
+        var dw = t.columns.3 - o.columns.3
+        let dw3 = SIMD3<Float>(dw.x, dw.y, dw.z) - posOffset
+        if tiltOnly {
+            // hold the arm where it is; only the wrist keeps tracking
+            if frozenDelta == nil { frozenDelta = dw3 }
+            let f = frozenDelta!
+            dw = SIMD4<Float>(f.x, f.y, f.z, dw.w)
+        } else {
+            if let f = frozenDelta {
+                // released: re-anchor so the arm resumes from where it sits
+                posOffset = dw3 - f
+                frozenDelta = nil
+            }
+            let d = SIMD3<Float>(dw.x, dw.y, dw.z) - posOffset
+            dw = SIMD4<Float>(d.x, d.y, d.z, dw.w)
+        }
         var fwd = SIMD3<Float>(-o.columns.2.x, -o.columns.2.y, -o.columns.2.z)
         if hypotf(fwd.x, fwd.z) < 0.15 {
             // camera is pointing straight up or down (phone lying flat), so
@@ -212,6 +239,22 @@ struct ContentView: View {
             Button("Connect UDP") {
                 streamer.connect(host: host, port: UInt16(portText) ?? 8463)
             }
+
+            Text(streamer.tiltOnly ? "POSITION LOCKED — tilt only"
+                                   : "HOLD TO LOCK POSITION")
+                .font(.system(size: 15, weight: .bold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 22)
+                .background(streamer.tiltOnly ? Color.orange.opacity(0.85)
+                                              : Color.gray.opacity(0.22))
+                .foregroundColor(streamer.tiltOnly ? .black : .primary)
+                .cornerRadius(14)
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { _ in if streamer.streaming { streamer.tiltOnly = true } }
+                        .onEnded { _ in streamer.tiltOnly = false }
+                )
+                .opacity(streamer.streaming ? 1 : 0.45)
 
             Button(streamer.streaming ? "Stop" : "Start") {
                 if streamer.streaming { streamer.stopStreaming() }

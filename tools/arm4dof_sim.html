@@ -213,7 +213,7 @@ Three.js could not be fetched — check the network, then reload.</div></div>
     jElbow.position.set(el[0], el[1], el[2]);
     wrist.position.set(tip[0], tip[1], tip[2]);
     // tool points outward along the arm's reach, then tilts by q4
-    wrist.rotation.set(0, Math.atan2(s1, c1), -q4*D2R, "YXZ");
+    wrist.rotation.set(0, Math.atan2(s1, c1), q4*D2R, "YXZ");  // +q4 tips the tool up
     return tip;
   }
 
