@@ -14,15 +14,15 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from fadegpt.eezy_servos import ServoDriver
-from fadegpt.dashboard_api import ApiError, DashboardAPI
-from fadegpt.store import Store
-from fadegpt.take import JointRecorder
-from fadegpt import telemetry_trace as trace
-from fadegpt.pendant import local_ip
-from fadegpt.pose_mapper import PoseMapper
-from fadegpt.pose_protocol import (
-    PoseProtocolError,
+from fade_ninja.eezy_servos import ServoDriver
+from fade_ninja.dashboard_api import ApiError, DashboardAPI
+from fade_ninja.store import Store
+from fade_ninja.take import JointRecorder
+from fade_ninja import telemetry_trace as trace
+from fade_ninja.pendant import local_ip
+from fade_ninja.pose_mapper import PoseMapper
+from fade_ninja.pose_protocol import (
+                                      PoseProtocolError,
     PoseSession,
     parse_message,
 )

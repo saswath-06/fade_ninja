@@ -2,7 +2,7 @@
 
 Add absolute ARKit phone-pose teleop (position + tilt → IK → joints) **alongside** the existing CoreMotion rate pendant — built test-first with gated checkpoints before hardware.
 
-There is **no CV code to remove**. README §4 vision text is roadmap prose only. The existing teach path is already the iPhone rate pendant (`phone/` → UDP `:8470` → `fadegpt/pendant.py`).
+There is **no CV code to remove**. README §4 vision text is roadmap prose only. The existing teach path is already the iPhone rate pendant (`phone/` → UDP `:8470` → `fade_ninja/pendant.py`).
 
 ---
 
@@ -10,7 +10,7 @@ There is **no CV code to remove**. README §4 vision text is roadmap prose only.
 
 | Path | Location | Transport | Sensing | Control |
 |------|----------|-----------|---------|---------|
-| **Rate pendant (keep)** | `phone/` + `fadegpt/pendant.py` | UDP **:8470** | CoreMotion pitch/roll only | → `JOG` rates (rail `phi/psi/theta`) |
+| **Rate pendant (keep)** | `phone/` + `fade_ninja/pendant.py` | UDP **:8470** | CoreMotion pitch/roll only | → `JOG` rates (rail `phi/psi/theta`) |
 | **Pose teleop (this plan)** | `ios/FadePose/` + `pose_server.py` | UDP **:8463** | ARKit world tracking | → IK → `q1..q4` (EEZY) |
 
 - The CoreMotion pendant stays untouched as the **joint-space / rail fallback**.
@@ -22,7 +22,7 @@ There is **no CV code to remove**. README §4 vision text is roadmap prose only.
 
 ## What the arm actually is
 
-The physical target for **this** path is **[EEZYbotARM (Thingiverse 1015238)](https://www.thingiverse.com/thing:1015238)** by daGHIZmo — not the fadegpt arc-rail geometry in `fadegpt/head.py`.
+The physical target for **this** path is **[EEZYbotARM (Thingiverse 1015238)](https://www.thingiverse.com/thing:1015238)** by daGHIZmo — not the fade_ninja arc-rail geometry in `fade_ninja/head.py`.
 
 ```mermaid
 flowchart TB
@@ -109,7 +109,7 @@ STATUS                                     # request/response reply datagram
 
 **Keep (parallel, not deleted):** teach/replay/profile, rail sim (`head.py`, `cutting.py`, …), `server.py`, rate pendant — the **rail + JOG** product path stays. Pose/EEZY is additive.
 
-**IK reference:** adapt math from [meisben/easyEEZYbotARM](https://github.com/meisben/easyEEZYbotARM); implement pure functions in `fadegpt/eezy_ik.py` with our constants (no runtime dependency on that repo).
+**IK reference:** adapt math from [meisben/easyEEZYbotARM](https://github.com/meisben/easyEEZYbotARM); implement pure functions in `fade_ninja/eezy_ik.py` with our constants (no runtime dependency on that repo).
 
 **Servos:** stock EEZY often cites MG90S; shoulder class is **unverified**. Measure torque needs and link lengths **before Phase 7**. Do not treat MG90S × 3 as approved hardware.
 
@@ -127,7 +127,7 @@ STATUS                                     # request/response reply datagram
 
 ### Phase 1 — Pose protocol (no arm yet)
 
-**New files:** `fadegpt/pose_protocol.py`, `tests/test_pose_protocol.py`
+**New files:** `fade_ninja/pose_protocol.py`, `tests/test_pose_protocol.py`
 
 | ID | Test first | Pass when |
 |----|------------|-----------|
@@ -141,7 +141,7 @@ STATUS                                     # request/response reply datagram
 
 ### Phase 2 — EEZYbotARM FK / IK (HARD GATE)
 
-**New files:** `fadegpt/eezy_ik.py`, `tests/test_eezy_ik.py`
+**New files:** `fade_ninja/eezy_ik.py`, `tests/test_eezy_ik.py`
 
 | ID | Test first | Pass when |
 |----|------------|-----------|
@@ -158,7 +158,7 @@ STATUS                                     # request/response reply datagram
 
 ### Phase 3 — Pose → joints mapper
 
-**New files:** `fadegpt/pose_mapper.py`, `tests/test_pose_mapper.py`
+**New files:** `fade_ninja/pose_mapper.py`, `tests/test_pose_mapper.py`
 
 Default `scale = 0.3`. Home joints = `Q_HOME` from T2.0.
 
@@ -196,7 +196,7 @@ uv run python tools/fake_phone.py --circle 0.05
 
 ### Phase 5 — Live sim visualization
 
-**New:** `tools/eezy_sim.html` served by pose_server (reuse patterns from `fadegpt/webpendant.py` + fadebench-style **2D canvas**).
+**New:** `tools/eezy_sim.html` served by pose_server (reuse patterns from `fade_ninja/webpendant.py` + fadebench-style **2D canvas**).
 
 **No Three.js / CDN dependency** in step 1. Drive the view from server joint state (STATUS/WS), not from the phone.
 
@@ -232,7 +232,7 @@ App does **only**:
 
 ### Phase 7 — Pi servo path (optional; does not block T6)
 
-**New:** `fadegpt/eezy_servos.py`, `pose_server.py --hardware`
+**New:** `fade_ninja/eezy_servos.py`, `pose_server.py --hardware`
 
 Measure link lengths and decide servo class **before** live torque. MG90S / published lengths remain **unverified** until then.
 

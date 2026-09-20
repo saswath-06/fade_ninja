@@ -4,8 +4,8 @@ The firmware counts the steps it generates whether or not drivers/motors are
 wired, so this verifies the entire control path — serial, velocity commands,
 position readback, rates — on a bare board.
 
-    uv run python -m fadegpt.hwcheck /dev/ttyACM0          # full check
-    uv run python -m fadegpt.hwcheck /dev/ttyACM0 --watch  # stream POS lines
+    uv run python -m fade_ninja.hwcheck /dev/ttyACM0          # full check
+    uv run python -m fade_ninja.hwcheck /dev/ttyACM0 --watch  # stream POS lines
 """
 from __future__ import annotations
 

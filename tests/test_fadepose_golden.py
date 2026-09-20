@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from fadegpt.pose_protocol import TRACK_NORMAL, PoseSession, parse_message
+from fade_ninja.pose_protocol import TRACK_NORMAL, PoseSession, parse_message
 
 # Checked-in contract samples (must stay in sync with ios/FadePose).
 GOLDEN = Path(__file__).resolve().parent / "golden_fadepose_lines.txt"

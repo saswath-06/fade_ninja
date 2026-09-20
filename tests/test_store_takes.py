@@ -3,9 +3,9 @@ import math
 
 import pytest
 
-from fadegpt.store import Store, StoreError, normalise_handle
-from fadegpt.take import (JointRecorder, ReplayRefused, TakePlayer, prepare,
-                          rms_per_joint, validate)
+from fade_ninja.store import Store, StoreError, normalise_handle
+from fade_ninja.take import (JointRecorder, ReplayRefused, TakePlayer, prepare,
+                             rms_per_joint, validate)
 
 
 @pytest.fixture
@@ -159,7 +159,7 @@ def test_a_pose_held_on_a_joint_limit_still_replays():
 
 def test_tracing_is_a_no_op_without_a_dsn():
     """The robot must not gain a hard dependency on an observability vendor."""
-    from fadegpt import telemetry_trace as trace
+    from fade_ninja import telemetry_trace as trace
     assert trace.init(dsn="") is False
     assert trace.is_enabled() is False
     with trace.span("robot.ik", "solve") as s:

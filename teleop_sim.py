@@ -22,12 +22,12 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from fadegpt.head import Head
-from fadegpt.interfaces import TICK_S
-from fadegpt.pendant import local_ip
-from fadegpt.pose_protocol import PoseProtocolError, PoseSession, parse_message
-from fadegpt.pose_teleop import PoseTeleop, TeleopConfig
-from fadegpt.rig import Rig
+from fade_ninja.head import Head
+from fade_ninja.interfaces import TICK_S
+from fade_ninja.pendant import local_ip
+from fade_ninja.pose_protocol import PoseProtocolError, PoseSession, parse_message
+from fade_ninja.pose_teleop import PoseTeleop, TeleopConfig
+from fade_ninja.rig import Rig
 from pose_server import _ws_accept, _ws_send_text   # reuse the tested helpers
 
 DEFAULT_UDP_PORT = 8463
@@ -247,7 +247,7 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.hardware:
-        from fadegpt.hardware_arm import ArmConfig, HardwareArm
+        from fade_ninja.hardware_arm import ArmConfig, HardwareArm
         rig = Rig(head=None)
         rig.arm = HardwareArm.open(ArmConfig(port=args.hardware))
     else:

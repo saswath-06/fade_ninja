@@ -2,11 +2,11 @@
 import numpy as np
 import pytest
 
-from fadegpt.calibration import default_calibration
-from fadegpt.interfaces import JOINT_LIMITS, TICK_MS, TeachLog
-from fadegpt.replay import ReplayRefused, replay, rms_per_axis, smooth, validate
-from fadegpt.rig import Rig
-from fadegpt.teach import jittered, ramp_log
+from fade_ninja.calibration import default_calibration
+from fade_ninja.interfaces import JOINT_LIMITS, TICK_MS, TeachLog
+from fade_ninja.replay import ReplayRefused, replay, rms_per_axis, smooth, validate
+from fade_ninja.rig import Rig
+from fade_ninja.teach import jittered, ramp_log
 
 CAL = default_calibration()
 

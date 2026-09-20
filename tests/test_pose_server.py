@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from fadegpt.eezy_servos import ServoDriver
+from fade_ninja.eezy_servos import ServoDriver
 from pose_server import WATCHDOG_S, PoseServer  # noqa: E402
 
 

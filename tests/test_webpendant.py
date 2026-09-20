@@ -13,8 +13,8 @@ import time
 
 import pytest
 
-from fadegpt.pendant import RateMap
-from fadegpt.webpendant import WebPendantReceiver
+from fade_ninja.pendant import RateMap
+from fade_ninja.webpendant import WebPendantReceiver
 
 
 @pytest.fixture(scope="module")

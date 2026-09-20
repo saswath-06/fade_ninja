@@ -8,8 +8,8 @@ import time
 
 import pytest
 
-from fadegpt.head import Head
-from fadegpt.rig import Rig
+from fade_ninja.head import Head
+from fade_ninja.rig import Rig
 from teleop_sim import TeleopServer
 
 
@@ -116,7 +116,7 @@ def test_cli_flags_build_a_valid_config():
     directly, so a renamed TeleopConfig field breaks only `main()`. Uses the
     real parser — a copy of it here would drift out of date silently."""
     import teleop_sim
-    from fadegpt.pose_teleop import TeleopConfig
+    from fade_ninja.pose_teleop import TeleopConfig
 
     ap = teleop_sim.build_parser()
 

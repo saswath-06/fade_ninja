@@ -14,12 +14,12 @@ import asyncio
 import json
 from collections import deque
 
-from fadegpt.arm import ArmError
-from fadegpt.head import Head
-from fadegpt.interfaces import TICK_S, LOG_HEADER, TeachLog
-from fadegpt.protocol import ProtocolError, parse_command
-from fadegpt.replay import ReplayRefused, _snap_to_limits, smooth, validate
-from fadegpt.rig import Rig
+from fade_ninja.arm import ArmError
+from fade_ninja.head import Head
+from fade_ninja.interfaces import TICK_S, LOG_HEADER, TeachLog
+from fade_ninja.protocol import ProtocolError, parse_command
+from fade_ninja.replay import ReplayRefused, _snap_to_limits, smooth, validate
+from fade_ninja.rig import Rig
 
 
 class VirtualESP32:
@@ -166,7 +166,7 @@ def main():
                          "sim, e.g. --hardware /dev/ttyACM0")
     args = ap.parse_args()
     if args.hardware:
-        from fadegpt.hardware_arm import ArmConfig, HardwareArm
+        from fade_ninja.hardware_arm import ArmConfig, HardwareArm
         rig = Rig(head=None)  # no virtual head: contact comes from the switch
         rig.arm = HardwareArm.open(ArmConfig(port=args.hardware))
         esp = VirtualESP32(rig=rig, tick_interval=TICK_S)  # hardware = realtime

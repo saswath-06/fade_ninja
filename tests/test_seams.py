@@ -5,9 +5,9 @@ ridges of uncut hair. The sim finds the largest seam-free advance.
 """
 import numpy as np
 
-from fadegpt.head import HAIR_START_MM, Head
-from fadegpt.interfaces import TICK_S
-from fadegpt.rig import Rig
+from fade_ninja.head import HAIR_START_MM, Head
+from fade_ninja.interfaces import TICK_S
+from fade_ninja.rig import Rig
 
 THETA = 30.0  # constant tilt -> 3.1 mm everywhere by the default table
 SWEEP_RATE = 25.0

@@ -9,9 +9,9 @@ import math
 
 import pytest
 
-from fadegpt.arm import HI, LO
-from fadegpt.pose_teleop import (PoseTeleop, TeleopConfig, forward_kinematics,
-                                 inverse_kinematics, quat_forward,
+from fade_ninja.arm import HI, LO
+from fade_ninja.pose_teleop import (PoseTeleop, TeleopConfig, forward_kinematics,
+                                    inverse_kinematics, quat_forward,
                                  quat_pitch_deg, RAIL_RADIUS_MM)
 
 LEVEL = (1.0, 0.0, 0.0, 0.0)
@@ -44,7 +44,7 @@ def arc_mm(j0, j1):
     and the latitude circle for psi — not the great-circle shortcut between
     the endpoints. ds^2 = (R dphi)^2 + (R cos(el) dpsi)^2.
     """
-    from fadegpt.head import EL_OFFSET_DEG
+    from fade_ninja.head import EL_OFFSET_DEG
     el = math.radians(j0[0] + EL_OFFSET_DEG)
     d_phi = math.radians(j1[0] - j0[0])
     d_psi = math.radians(j1[1] - j0[1])

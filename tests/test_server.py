@@ -6,8 +6,8 @@ import threading
 
 import pytest
 
-from fadegpt.calibration import default_calibration
-from fadegpt.teach import ramp_log
+from fade_ninja.calibration import default_calibration
+from fade_ninja.teach import ramp_log
 
 import sys
 from pathlib import Path

@@ -28,7 +28,7 @@ from pathlib import Path
 from .pendant import WATCHDOG_S, PendantPacket
 
 WS_MAGIC = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-CERT_DIR = Path.home() / ".cache" / "fadegpt"
+CERT_DIR = Path.home() / ".cache" / "fade_ninja"
 
 
 # --------------------------------------------------------------- TLS cert
@@ -43,7 +43,7 @@ def ensure_cert() -> tuple[Path, Path]:
     subprocess.run(
         ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
          "-keyout", str(key), "-out", str(cert), "-days", "365",
-         "-subj", "/CN=fadegpt-pendant",
+         "-subj", "/CN=fade_ninja-pendant",
          "-addext", "subjectAltName=IP:0.0.0.0,DNS:localhost"],
         check=True, capture_output=True)
     return cert, key

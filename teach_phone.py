@@ -21,18 +21,18 @@ from pathlib import Path
 
 import numpy as np
 
-from fadegpt.head import Head
-from fadegpt.interfaces import TICK_S, TeachLog
-from fadegpt.pendant import PendantReceiver, RateMap, local_ip
-from fadegpt.replay import replay, rms_per_axis, smooth
-from fadegpt.rig import Rig
+from fade_ninja.head import Head
+from fade_ninja.interfaces import TICK_S, TeachLog
+from fade_ninja.pendant import PendantReceiver, RateMap, local_ip
+from fade_ninja.replay import replay, rms_per_axis, smooth
+from fade_ninja.rig import Rig
 
 OUT = Path(__file__).parent / "out"
 
 
 def build_rig(hardware: str | None) -> Rig:
     if hardware:
-        from fadegpt.hardware_arm import ArmConfig, HardwareArm
+        from fade_ninja.hardware_arm import ArmConfig, HardwareArm
         rig = Rig(head=None)
         rig.arm = HardwareArm.open(ArmConfig(port=hardware))
         return rig
@@ -41,7 +41,7 @@ def build_rig(hardware: str | None) -> Rig:
 
 def teach(rig: Rig, port: int, rate_map: RateMap, web: bool = False) -> list[Path]:
     if web:
-        from fadegpt.webpendant import WebPendantReceiver
+        from fade_ninja.webpendant import WebPendantReceiver
         rx = WebPendantReceiver(port=port)
         print(f"\n  Open this on the iPhone (Safari):\n")
         print(f"      https://{local_ip()}:{port}/\n")

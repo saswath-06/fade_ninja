@@ -3,9 +3,9 @@ import math
 
 import pytest
 
-from fadegpt.eezy_ik import P_HOME, Q_HOME
-from fadegpt.pose_mapper import DEFAULT_SCALE, PoseMapper
-from fadegpt.pose_protocol import RelativePose
+from fade_ninja.eezy_ik import P_HOME, Q_HOME
+from fade_ninja.pose_mapper import DEFAULT_SCALE, PoseMapper
+from fade_ninja.pose_protocol import RelativePose
 
 
 def rel(x=0.0, y=0.0, z=0.0, qw=1.0, qx=0.0, qy=0.0, qz=0.0, t_ms=0):

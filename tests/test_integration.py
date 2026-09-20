@@ -6,12 +6,12 @@ D4 is the product thesis: 'your haircut is a file.'
 import numpy as np
 import pytest
 
-from fadegpt.head import Head
-from fadegpt.interfaces import HeadGeometry
-from fadegpt.profile import log_to_profile, profile_curve, profile_to_log
-from fadegpt.replay import replay
-from fadegpt.rig import Rig
-from fadegpt.teach import default_fade_mm, high_fade_mm, teach_fade
+from fade_ninja.head import Head
+from fade_ninja.interfaces import HeadGeometry
+from fade_ninja.profile import log_to_profile, profile_curve, profile_to_log
+from fade_ninja.replay import replay
+from fade_ninja.rig import Rig
+from fade_ninja.teach import default_fade_mm, high_fade_mm, teach_fade
 
 
 @pytest.fixture(scope="module")

@@ -1,5 +1,5 @@
 """Phase 7 dry-run servo pulse mapping."""
-from fadegpt.eezy_servos import ServoDriver, angle_to_pulse_us
+from fade_ninja.eezy_servos import ServoDriver, angle_to_pulse_us
 
 
 def test_angle_to_pulse_endpoints():

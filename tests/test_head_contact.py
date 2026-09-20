@@ -1,8 +1,8 @@
 """A7/A8 analog: the spring keeps the heel on the scalp over the full sweep."""
 import numpy as np
 
-from fadegpt.head import SPRING_MAX_MM, SPRING_MIN_MM, Head
-from fadegpt.interfaces import HeadGeometry
+from fade_ninja.head import SPRING_MAX_MM, SPRING_MIN_MM, Head
+from fade_ninja.interfaces import HeadGeometry
 
 
 def _zone_grids(head: Head):

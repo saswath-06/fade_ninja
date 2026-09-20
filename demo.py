@@ -16,13 +16,13 @@ from pathlib import Path
 
 import numpy as np
 
-from fadegpt.head import Head
-from fadegpt.interfaces import HeadGeometry
-from fadegpt.profile import log_to_profile, profile_curve, profile_to_log
-from fadegpt.replay import replay, rms_per_axis, smooth
-from fadegpt.rig import Rig
-from fadegpt.teach import default_fade_mm, high_fade_mm, teach_fade
-from fadegpt.viz import (plot_fade_curves, plot_side_by_side, plot_trajectory)
+from fade_ninja.head import Head
+from fade_ninja.interfaces import HeadGeometry
+from fade_ninja.profile import log_to_profile, profile_curve, profile_to_log
+from fade_ninja.replay import replay, rms_per_axis, smooth
+from fade_ninja.rig import Rig
+from fade_ninja.teach import default_fade_mm, high_fade_mm, teach_fade
+from fade_ninja.viz import (plot_fade_curves, plot_side_by_side, plot_trajectory)
 
 OUT = Path(__file__).parent / "out"
 

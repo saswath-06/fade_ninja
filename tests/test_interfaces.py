@@ -1,9 +1,9 @@
 """Phase 0: all five shared blocks round-trip through their wire formats."""
 import pytest
 
-from fadegpt.interfaces import (CalibrationTable, HeadGeometry, LogSample,
-                                Profile, ProfilePoint, TeachLog)
-from fadegpt.protocol import Command, ProtocolError, parse_command
+from fade_ninja.interfaces import (CalibrationTable, HeadGeometry, LogSample,
+                                   Profile, ProfilePoint, TeachLog)
+from fade_ninja.protocol import Command, ProtocolError, parse_command
 
 
 def test_log_line_round_trip():

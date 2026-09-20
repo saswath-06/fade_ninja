@@ -147,7 +147,7 @@ Must be monotonic. If it flattens at high tilt, the heel is lifting off and the 
 
 ## 8. Software (simulation-first)
 
-The `fadegpt/` package implements the whole software side against a
+The `fade_ninja/` package implements the whole software side against a
 physics-lite simulator, so every Phase B gate in PLAN.md is testable before
 any hardware exists, and the same suite becomes the spec for the ESP32 port.
 
@@ -259,8 +259,8 @@ wrist follows your wrist.
 uv run python pose_server.py        # then open http://127.0.0.1:8464/
 ```
 
-Kinematics live in `fadegpt/eezy_ik.py` (FK, IK, joint limits, reachability)
-and the pose mapping in `fadegpt/pose_mapper.py`. The viewer draws the real
+Kinematics live in `fade_ninja/eezy_ik.py` (FK, IK, joint limits, reachability)
+and the pose mapping in `fade_ninja/pose_mapper.py`. The viewer draws the real
 linkage from the joint angles, with per-joint bars, tip coordinates, a tip
 trail, a reachable-workspace shell (press W) and a reachability warning when
 the phone asks for a point the arm cannot hit.
@@ -299,13 +299,13 @@ gains no hard dependency on it.
 The Pi runs this Python stack unchanged; the Arduino
 (`firmware/robot_barber_arm/`, needs the AccelStepper library) only
 generates step pulses and reports counters + switches over USB serial.
-`fadegpt/hardware_arm.py` is a drop-in for the simulated arm using the same
+`fade_ninja/hardware_arm.py` is a drop-in for the simulated arm using the same
 tested motion planner; `tests/test_hardware_arm.py` runs the Phase B gates
 against an emulated board, and works motor-free on the real one because
 step counters advance whether or not motors are wired.
 
 ```
 uv sync --extra hw
-uv run python -m fadegpt.hwcheck /dev/ttyACM0    # bench link check, no motors
+uv run python -m fade_ninja.hwcheck /dev/ttyACM0    # bench link check, no motors
 uv run python server.py --hardware /dev/ttyACM0  # real arm behind the same TCP protocol
 ```

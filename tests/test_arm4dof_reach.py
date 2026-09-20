@@ -13,12 +13,12 @@ import pathlib
 
 import pytest
 
-from fadegpt.eezy_ik import (L0_MM, L2_MM, L3_MM, P_HOME, Q2_LIMITS,
-                             Q3_LIMITS, forward_kinematics,
+from fade_ninja.eezy_ik import (L0_MM, L2_MM, L3_MM, P_HOME, Q2_LIMITS,
+                                Q3_LIMITS, forward_kinematics,
                              inverse_kinematics, inverse_kinematics_clamped,
                              workspace_reach)
-from fadegpt.pose_mapper import PoseMapper
-from fadegpt.pose_protocol import RelativePose
+from fade_ninja.pose_mapper import PoseMapper
+from fade_ninja.pose_protocol import RelativePose
 
 
 def rel(x=0.0, y=0.0, z=0.0):
@@ -149,7 +149,7 @@ def test_joints_arrive_together_rather_than_one_finishing_early():
 def test_the_tip_actually_reaches_a_held_target():
     """Convergence was never pinned: a mapper that merely moves toward the
     target looks right in a screenshot but never arrives."""
-    from fadegpt.eezy_ik import forward_kinematics as fk
+    from fade_ninja.eezy_ik import forward_kinematics as fk
     m = PoseMapper()
     m.update(rel(), now=0.0)
     hold = (0.30, 0.19, 0.15)
@@ -165,7 +165,7 @@ def test_the_tip_actually_reaches_a_held_target():
 def test_tracking_lag_stays_responsive():
     """60 deg/s left the arm ~0.9 s behind the hand, which reads as bad
     tracing. Guard the responsiveness we settled on."""
-    from fadegpt.eezy_ik import forward_kinematics as fk
+    from fade_ninja.eezy_ik import forward_kinematics as fk
     m = PoseMapper()
     m.update(rel(), now=0.0)
     hold = (0.30, 0.19, 0.15)
@@ -291,7 +291,7 @@ def test_turning_the_phone_horizontally_does_not_tilt_the_clipper(grip, yaw):
     vertically. Sending the origin-camera-relative quaternion leaked yaw into
     pitch whenever the phone was tilted — at a 40 deg grip, a 90 deg turn
     moved the cut angle 30 deg."""
-    from fadegpt.pose_protocol import pitch_deg_from_quat
+    from fade_ninja.pose_protocol import pitch_deg_from_quat
     Ro = _rot_x(grip)
     Rc = _mul(_rot_y(yaw), Ro)                  # spin it about gravity
     rel = _rel_quat(_elevation_quat(Ro), _elevation_quat(Rc))
@@ -300,7 +300,7 @@ def test_turning_the_phone_horizontally_does_not_tilt_the_clipper(grip, yaw):
 
 @pytest.mark.parametrize("grip", [0, -40, -80])
 def test_a_real_wrist_tilt_still_reads_through(grip):
-    from fadegpt.pose_protocol import pitch_deg_from_quat
+    from fade_ninja.pose_protocol import pitch_deg_from_quat
     Ro = _rot_x(grip)
     Rc = _mul(Ro, _rot_x(25))                   # nose up 25 in the hand
     rel = _rel_quat(_elevation_quat(Ro), _elevation_quat(Rc))
@@ -309,7 +309,7 @@ def test_a_real_wrist_tilt_still_reads_through(grip):
 
 def test_the_old_relative_quaternion_would_have_leaked():
     """Pins that the bug was real, so the fix cannot be quietly reverted."""
-    from fadegpt.pose_protocol import pitch_deg_from_quat
+    from fade_ninja.pose_protocol import pitch_deg_from_quat
     Ro = _rot_x(-40)
     Rc = _mul(_rot_y(90), Ro)
     RoT = [[Ro[j][i] for j in range(3)] for i in range(3)]

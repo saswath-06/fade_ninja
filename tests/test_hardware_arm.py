@@ -4,13 +4,13 @@ board is plugged in, hwcheck runs the same checks over actual serial."""
 import numpy as np
 import pytest
 
-from fadegpt.arm import ArmError
-from fadegpt.hardware_arm import ArmConfig, FakeArduino, HardwareArm
-from fadegpt.interfaces import TICK_S
-from fadegpt.replay import replay
-from fadegpt.rig import Rig
-from fadegpt.teach import ramp_log
-from fadegpt.calibration import default_calibration
+from fade_ninja.arm import ArmError
+from fade_ninja.hardware_arm import ArmConfig, FakeArduino, HardwareArm
+from fade_ninja.interfaces import TICK_S
+from fade_ninja.replay import replay
+from fade_ninja.rig import Rig
+from fade_ninja.teach import ramp_log
+from fade_ninja.calibration import default_calibration
 
 
 def bench_arm() -> HardwareArm:
@@ -91,6 +91,6 @@ def test_replay_pipeline_runs_on_hardware_driver():
 
     bad = ramp_log(default_calibration(), duration_s=2.0)
     bad.samples[50].theta = 85.0
-    from fadegpt.replay import ReplayRefused
+    from fade_ninja.replay import ReplayRefused
     with pytest.raises(ReplayRefused):
         replay(bad, rig, smooth_first=False)

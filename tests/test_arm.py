@@ -2,9 +2,9 @@
 import numpy as np
 import pytest
 
-from fadegpt.arm import ArmError, VirtualArm
-from fadegpt.interfaces import TICK_S
-from fadegpt.rig import Rig
+from fade_ninja.arm import ArmError, VirtualArm
+from fade_ninja.interfaces import TICK_S
+from fade_ninja.rig import Rig
 
 
 def test_b11_axes_move_independently():

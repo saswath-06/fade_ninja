@@ -2,11 +2,11 @@
 import numpy as np
 import pytest
 
-from fadegpt.calibration import (Calibration, CalibrationError,
-                                 default_calibration)
-from fadegpt.interfaces import CalibrationTable, HeadGeometry
-from fadegpt.profile import log_to_profile, profile_curve
-from fadegpt.teach import jittered, ramp_log
+from fade_ninja.calibration import (Calibration, CalibrationError,
+                                    default_calibration)
+from fade_ninja.interfaces import CalibrationTable, HeadGeometry
+from fade_ninja.profile import log_to_profile, profile_curve
+from fade_ninja.teach import jittered, ramp_log
 
 CAL = default_calibration()
 GEOM = HeadGeometry()

@@ -13,10 +13,10 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from fadegpt.head import Head
-from fadegpt.replay import _snap_to_limits, smooth
-from fadegpt.rig import Rig
-from fadegpt.teach import high_fade_mm, teach_fade
+from fade_ninja.head import Head
+from fade_ninja.replay import _snap_to_limits, smooth
+from fade_ninja.rig import Rig
+from fade_ninja.teach import high_fade_mm, teach_fade
 
 ROOT = Path(__file__).resolve().parent.parent
 

@@ -1,5 +1,5 @@
 [project]
-name = "fadegpt"
+name = "fade_ninja"
 version = "0.1.0"
 description = "Robot barber: record-and-replay fade software with a physics-lite simulator"
 requires-python = ">=3.11"

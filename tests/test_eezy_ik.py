@@ -3,8 +3,8 @@ import math
 
 import pytest
 
-from fadegpt.eezy_ik import (
-    L0_MM,
+from fade_ninja.eezy_ik import (
+                                L0_MM,
     L2_MM,
     L3_MM,
     P_HOME,

@@ -3,8 +3,8 @@ import math
 
 import pytest
 
-from fadegpt.pose_protocol import (
-    TRACK_LIMITED,
+from fade_ninja.pose_protocol import (
+                                      TRACK_LIMITED,
     TRACK_NORMAL,
     TRACK_RELOCALIZING,
     PoseProtocolError,

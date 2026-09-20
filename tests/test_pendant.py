@@ -10,12 +10,12 @@ import time
 import numpy as np
 import pytest
 
-from fadegpt.head import Head
-from fadegpt.interfaces import TICK_S, TeachLog
-from fadegpt.pendant import (DEFAULT_PORT, PendantPacket, PendantReceiver,
-                             RateMap)
-from fadegpt.replay import replay, rms_per_axis, smooth
-from fadegpt.rig import Rig
+from fade_ninja.head import Head
+from fade_ninja.interfaces import TICK_S, TeachLog
+from fade_ninja.pendant import (DEFAULT_PORT, PendantPacket, PendantReceiver,
+                                RateMap)
+from fade_ninja.replay import replay, rms_per_axis, smooth
+from fade_ninja.rig import Rig
 
 
 def pkt(seq=1, t_ms=0, pitch=0.0, roll=0.0, slider=0.0, cut=False, rec=False):
