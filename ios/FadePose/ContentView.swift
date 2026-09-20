@@ -327,6 +327,14 @@ final class Library: ObservableObject {
         }
     }
 
+    func delete(_ cut: Cut) {
+        run("delete") {
+            self.cuts = try await self.post("/api/delete", ["take_id": cut.id],
+                                            as: TakesReply.self).takes
+            self.note = "deleted \(cut.name)"
+        }
+    }
+
     func stopReplay() {
         run("stop") {
             _ = try await self.post("/api/replay/stop", [:], as: [String: AnyCodableStub?].self)
@@ -728,14 +736,31 @@ struct RemoteView: View {
 struct ReplayView: View {
     @ObservedObject var library: Library
     @State private var playingId: String? = nil
+    @State private var pendingDelete: Cut? = nil
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                if library.cuts.isEmpty {
-                    empty
-                } else {
-                    ForEach(library.cuts) { cut in card(cut) }
+        Group {
+            if library.cuts.isEmpty {
+                ScrollView { empty }.refreshable { library.refresh() }
+            } else {
+                List {
+                    ForEach(library.cuts) { cut in
+                        card(cut)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16,
+                                                      bottom: 6, trailing: 16))
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    tap(.rigid); pendingDelete = cut
+                                } label: { Label("Delete", systemImage: "trash") }
+                            }
+                            .contextMenu {
+                                Button(role: .destructive) { pendingDelete = cut } label: {
+                                    Label("Delete cut", systemImage: "trash")
+                                }
+                            }
+                    }
                     Button {
                         tap(.light); playingId = nil; library.stopReplay()
                     } label: {
@@ -747,11 +772,29 @@ struct ReplayView: View {
                             .foregroundStyle(Ink.text)
                     }
                     .disabled(library.busy)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 10, leading: 16,
+                                              bottom: 30, trailing: 16))
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .refreshable { library.refresh() }
             }
-            .padding(16)
         }
-        .refreshable { library.refresh() }
+        // a cut is the only copy of that haircut, so deleting it asks first
+        .confirmationDialog("Delete this cut?",
+                            isPresented: Binding(get: { pendingDelete != nil },
+                                                 set: { if !$0 { pendingDelete = nil } }),
+                            titleVisibility: .visible) {
+            Button("Delete \(pendingDelete?.name ?? "")", role: .destructive) {
+                if let c = pendingDelete { library.delete(c) }
+                pendingDelete = nil
+            }
+            Button("Keep it", role: .cancel) { pendingDelete = nil }
+        } message: {
+            Text("This removes the recording for good. It cannot be undone.")
+        }
     }
 
     private var empty: some View {
@@ -807,6 +850,7 @@ struct ReplayView: View {
                         in: Circle())
                     .shadow(color: Ink.blue.opacity(0.4), radius: 8, y: 3)
             }
+            .buttonStyle(.plain)
             .disabled(library.busy)
         }
         .padding(14)
