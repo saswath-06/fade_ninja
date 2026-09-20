@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Fade Ninja — 3DOF arm</title>
+<style>
+  :root { --bg:#0e1116; --panel:#161b22; --line:#262d36; --ink:#e6edf3;
+          --muted:#8b949e; --ok:#3fb950; --warn:#d29922; --bad:#f85149;
+          --q1:#58a6ff; --q2:#bc8cff; --q3:#f0883e; }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--ink);overflow:hidden;
+       font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}
+  #gl{position:fixed;top:0;left:0;display:block}
+  .hud{position:fixed;background:rgba(22,27,34,.92);border:1px solid var(--line);
+       border-radius:10px;padding:12px 14px;backdrop-filter:blur(6px)}
+  #left{top:14px;left:14px;min-width:258px} #right{top:14px;right:14px;min-width:190px}
+  #foot{left:14px;bottom:14px;right:14px;display:flex;gap:18px;flex-wrap:wrap;align-items:center}
+  h1{font:700 14px/1 ui-sans-serif,system-ui;margin:0 0 2px;letter-spacing:.04em}
+  .sub{color:var(--muted);font-size:11px;margin-bottom:10px}
+  .j{margin-bottom:9px}
+  .j .row{display:flex;justify-content:space-between;align-items:baseline}
+  .j .nm{font-size:10.5px;letter-spacing:.06em;color:var(--muted)}
+  .j .v{font-size:16px;font-variant-numeric:tabular-nums}
+  .track{height:5px;background:#0b0e13;border-radius:3px;margin-top:4px;position:relative;overflow:hidden}
+  .track i{position:absolute;top:0;bottom:0;border-radius:3px}
+  .a .v{color:var(--q1)} .a i{background:var(--q1)}
+  .b .v{color:var(--q2)} .b i{background:var(--q2)}
+  .c .v{color:var(--q3)} .c i{background:var(--q3)}
+  .lim{color:var(--bad);font-size:10px;margin-left:6px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;
+        border:1px solid var(--line);font-size:11px;color:var(--muted)}
+  .pill b{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+  .pill.on{color:var(--ink)} .pill.on b{background:var(--ok)}
+  .pill.warn{color:var(--warn)} .pill.warn b{background:var(--warn)}
+  .kv{display:flex;justify-content:space-between;gap:14px;font-size:11.5px;color:var(--muted)}
+  .kv span:last-child{color:var(--ink);font-variant-numeric:tabular-nums}
+  .tag{position:fixed;transform:translate(-50%,-50%);pointer-events:none;font-size:10px;
+       font-weight:700;letter-spacing:.09em;white-space:nowrap;padding:3px 7px;border-radius:5px;
+       background:rgba(14,17,22,.78);border:1px solid currentColor}
+  #nosig{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);display:none;
+         text-align:center;padding:18px 26px;border-radius:12px;background:rgba(22,27,34,.94);
+         border:1px solid var(--warn);pointer-events:none}
+  #nosig b{display:block;color:var(--warn);font:700 15px ui-sans-serif,system-ui;
+           letter-spacing:.06em;margin-bottom:6px}
+  #nosig span{color:var(--muted);font-size:12px;line-height:1.6}
+  #err{position:fixed;inset:0;display:none;place-items:center;text-align:center;
+       padding:30px;color:var(--muted)}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="err"><div><b style="color:var(--ink)">3D failed to load.</b><br/>Three.js could not be fetched.</div></div>
+<div id="nosig"><b>NO SIGNAL</b><span>The arm is holding its last pose — the phone has stopped sending.<br/>
+Check both are on the same network, then Stop &amp; Start in FadePose.</span></div>
+
+<div class="hud" id="left">
+  <h1>FADE NINJA · 3DOF</h1><div class="sub">phone pose &rarr; base, pitch, razor</div>
+  <div class="j a"><div class="row"><span class="nm">q1 &mdash; BASE ROTATION</span>
+    <span><span class="v" id="v1">0.0</span>&deg;<span class="lim" id="l1"></span></span></div>
+    <div class="track"><i id="b1"></i></div></div>
+  <div class="j b"><div class="row"><span class="nm">q2 &mdash; ARM PITCH</span>
+    <span><span class="v" id="v2">0.0</span>&deg;<span class="lim" id="l2"></span></span></div>
+    <div class="track"><i id="b2"></i></div></div>
+  <div class="j c"><div class="row"><span class="nm">q3 &mdash; RAZOR FLICK</span>
+    <span><span class="v" id="v3">0.0</span>&deg;<span class="lim" id="l3"></span></span></div>
+    <div class="track"><i id="b3"></i></div></div>
+</div>
+
+<div class="hud" id="right">
+  <div style="font-size:10px;letter-spacing:.08em;color:var(--muted);margin-bottom:5px">RAZOR TIP</div>
+  <div class="kv"><span>height</span><span id="tup">0</span></div>
+  <div class="kv"><span>reach</span><span id="tfw">0</span></div>
+  <div class="kv"><span>lateral</span><span id="tlt">0</span></div>
+  <div class="kv" style="margin-top:10px"><span>packets</span><span id="pk">0</span></div>
+  <div class="kv"><span>rejected</span><span id="rj">0</span></div>
+  <div class="kv"><span>recorded</span><span id="rc">0</span></div>
+</div>
+
+<div class="hud" id="foot">
+  <span class="pill" id="pClutch"><b></b>CLUTCH</span>
+  <span class="pill" id="pTrack"><b></b>TRACKING</span>
+  <span class="pill" id="pLink"><b></b>LINK</span>
+  <span class="pill" id="pRec"><b></b>RECORDING</span>
+  <span style="color:var(--muted);font-size:11px">drag to orbit · scroll to zoom · T trail</span>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+  "use strict";
+  if (typeof THREE === "undefined") { document.getElementById("err").style.display="grid"; return; }
+  const $ = id => document.getElementById(id);
+  const D2R = Math.PI/180, S = 0.01;         // mm -> scene units
+  let SPEC = {arm_len_mm:150, pivot_h_mm:60, q1:[-90,90], q2:[-20,80], q3:[-60,60]};
+
+  const renderer = new THREE.WebGLRenderer({canvas:$("gl"), antialias:true});
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0e1116);
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 100);
+  scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x141820, 0.9));
+  const key = new THREE.DirectionalLight(0xffffff, .85); key.position.set(3,5,2); scene.add(key);
+  const rim = new THREE.DirectionalLight(0x6fa8ff, .3); rim.position.set(-3,1,-3); scene.add(rim);
+  scene.add(new THREE.GridHelper(6, 24, 0x2a3340, 0x1b2129));
+  scene.add(new THREE.AxesHelper(0.45));
+
+  const mLink = new THREE.MeshStandardMaterial({color:0x5b6675, roughness:.45, metalness:.55});
+  const mJoint = new THREE.MeshStandardMaterial({color:0x8b96a6, roughness:.3, metalness:.75});
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(.34,.42,.12,28),
+    new THREE.MeshStandardMaterial({color:0x2b333e, roughness:.7, metalness:.35}));
+  base.position.y = .06; scene.add(base);
+  const column = new THREE.Mesh(new THREE.CylinderGeometry(.08,.095,1,20), mLink); scene.add(column);
+  const pivot = new THREE.Mesh(new THREE.SphereGeometry(.085,20,16), mJoint); scene.add(pivot);
+  const arm = new THREE.Mesh(new THREE.CylinderGeometry(.052,.046,1,16), mLink); scene.add(arm);
+
+  // razor at the tip: a flat blade that flicks with q3
+  const razor = new THREE.Group(); scene.add(razor);
+  const holder = new THREE.Mesh(new THREE.BoxGeometry(.13,.09,.2),
+    new THREE.MeshStandardMaterial({color:0x2f3742, roughness:.45, metalness:.4}));
+  holder.position.x = .08; razor.add(holder);
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(.05,.022,.24),
+    new THREE.MeshStandardMaterial({color:0xf0883e, roughness:.25, metalness:.7}));
+  blade.position.x = .01; razor.add(blade);
+  const tcp = new THREE.Mesh(new THREE.SphereGeometry(.03,14,12),
+    new THREE.MeshBasicMaterial({color:0xffa657}));
+  tcp.renderOrder = 3; tcp.material.depthTest = false; razor.add(tcp);
+
+  const _a=new THREE.Vector3(), _b=new THREE.Vector3(), _m=new THREE.Vector3(),
+        _up=new THREE.Vector3(0,1,0), _d=new THREE.Vector3();
+  function aim(mesh,a,b){ _a.set(...a); _b.set(...b); _m.addVectors(_a,_b).multiplyScalar(.5);
+    _d.subVectors(_b,_a); const l=_d.length()||1e-6; mesh.position.copy(_m);
+    mesh.scale.set(1,l,1); mesh.quaternion.setFromUnitVectors(_up,_d.normalize()); }
+
+  // arm frame has Z up; here Y is up, so (x,y,z)_arm -> (x, z, -y)_scene
+  function fk(q1,q2){
+    const a=q1*D2R, p=q2*D2R, L=SPEC.arm_len_mm*S, H=SPEC.pivot_h_mm*S;
+    const piv=[0,H,0];
+    const r=L*Math.cos(p);
+    return {piv, tip:[r*Math.cos(a), H+L*Math.sin(p), -r*Math.sin(a)], a};
+  }
+  function setJoints(q1,q2,q3){
+    const {piv,tip,a} = fk(q1,q2);
+    aim(column,[0,0,0],piv); pivot.position.set(...piv);
+    aim(arm,piv,tip);
+    razor.position.set(...tip);
+    razor.rotation.set(0, a, q3*D2R, "YXZ");
+    return tip;
+  }
+
+  const MAX=1200, tg=new THREE.BufferGeometry();
+  tg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(MAX*3),3));
+  const trail=new THREE.Line(tg,new THREE.LineBasicMaterial({color:0xffa657}));
+  trail.frustumCulled=false; trail.renderOrder=2; trail.material.depthTest=false; scene.add(trail);
+  let tn=0, trailOn=true;
+  function push(p){ const arr=tg.attributes.position;
+    if(tn>=MAX){arr.array.copyWithin(0,3); tn=MAX-1;}
+    arr.array[tn*3]=p[0]; arr.array[tn*3+1]=p[1]; arr.array[tn*3+2]=p[2];
+    tn++; arr.needsUpdate=true; tg.setDrawRange(0,tn); }
+
+  function makeTag(t,c){ const e=document.createElement("div"); e.className="tag";
+    e.textContent=t; e.style.color=c; document.body.appendChild(e); return e; }
+  const TAGS=[{el:makeTag("BASE","#8b949e"),obj:base,off:.2},
+              {el:makeTag("PITCH PIVOT","#bc8cff"),obj:pivot,off:.17},
+              {el:makeTag("RAZOR","#f0883e"),obj:razor,off:-.19}];
+  const AX=[{t:"UP",p:[0,.62,0],c:"#3fb950"},{t:"FORWARD",p:[.62,0,0],c:"#f85149"},
+            {t:"LATERAL",p:[0,0,.62],c:"#58a6ff"}].map(a=>({...a,el:makeTag(a.t,a.c)}));
+  const _v=new THREE.Vector3();
+  function placeTags(){
+    for(const t of TAGS){ t.obj.getWorldPosition(_v); _v.y+=t.off; _v.project(camera);
+      if(_v.z>1){t.el.style.display="none";continue;} t.el.style.display="block";
+      t.el.style.left=((_v.x*.5+.5)*innerWidth)+"px"; t.el.style.top=((-_v.y*.5+.5)*innerHeight)+"px"; }
+    for(const a of AX){ _v.set(...a.p).project(camera);
+      if(_v.z>1){a.el.style.display="none";continue;} a.el.style.display="block"; a.el.style.opacity=.75;
+      a.el.style.left=((_v.x*.5+.5)*innerWidth)+"px"; a.el.style.top=((-_v.y*.5+.5)*innerHeight)+"px"; }
+  }
+
+  let az=2.35, el=.38, dist=4.2, drag=false, lx=0, ly=0;
+  addEventListener("pointerdown",e=>{drag=true;lx=e.clientX;ly=e.clientY});
+  addEventListener("pointerup",()=>drag=false);
+  addEventListener("pointermove",e=>{ if(!drag)return;
+    az-=(e.clientX-lx)*.007; el=Math.max(-.35,Math.min(1.35,el+(e.clientY-ly)*.006));
+    lx=e.clientX; ly=e.clientY; });
+  addEventListener("wheel",e=>{e.preventDefault();
+    dist=Math.max(1.6,Math.min(12,dist+Math.sign(e.deltaY)*.3))},{passive:false});
+  addEventListener("keydown",e=>{ if(e.key.toLowerCase()==="t"){
+    trailOn=!trailOn; if(!trailOn){tn=0;tg.setDrawRange(0,0);} }});
+
+  let st=null;
+  (function connect(){ const ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws");
+    ws.onmessage=ev=>{try{st=JSON.parse(ev.data)}catch(e){}};
+    ws.onclose=()=>{st=null;setTimeout(connect,1200)}; })();
+
+  const pill=(e,on,cls)=>{e.classList.remove("on","warn"); if(cls)e.classList.add(cls); else if(on)e.classList.add("on");};
+  function bar(id,v,lim){ const f=(v-lim[0])/(lim[1]-lim[0]), el=$(id), pct=Math.max(0,Math.min(1,f))*100;
+    if(lim[0]<0&&lim[1]>0){ const z=(-lim[0])/(lim[1]-lim[0])*100;
+      el.style.left=Math.min(pct,z)+"%"; el.style.width=Math.abs(pct-z)+"%"; }
+    else { el.style.left="0%"; el.style.width=pct+"%"; } }
+
+  function apply(){
+    if(!st){ pill($("pLink"),false,"warn"); return; }
+    if(st.spec) SPEC=st.spec;
+    const tip=setJoints(st.q1,st.q2,st.q3);
+    $("v1").textContent=st.q1.toFixed(1); bar("b1",st.q1,SPEC.q1);
+    $("v2").textContent=st.q2.toFixed(1); bar("b2",st.q2,SPEC.q2);
+    $("v3").textContent=st.q3.toFixed(1); bar("b3",st.q3,SPEC.q3);
+    const c=st.clamped||{};
+    $("l1").textContent=c.q1?"LIMIT":""; $("l2").textContent=c.q2?"LIMIT":""; $("l3").textContent=c.q3?"LIMIT":"";
+    const t=st.tip_mm||[0,0,0];
+    $("tup").textContent=t[1].toFixed(0)+" mm";   // arm +Y is height
+    $("tfw").textContent=t[0].toFixed(0)+" mm";
+    $("tlt").textContent=t[2].toFixed(0)+" mm";
+    $("pk").textContent=st.packets; $("rj").textContent=st.rejected;
+    $("rc").textContent=st.rec_samples||0;
+    blade.material.emissive = blade.material.emissive || new THREE.Color();
+    if(trailOn && st.engaged && !st.stale) push(tip);
+    $("nosig").style.display = st.stale ? "block" : "none";
+    pill($("pClutch"),st.engaged); pill($("pTrack"),st.tracking_ok,st.tracking_ok?null:"warn");
+    pill($("pLink"),!st.stale,st.stale?"warn":null); pill($("pRec"),st.recording);
+  }
+
+  let lw=0,lh=0;
+  function loop(){
+    const w=innerWidth,h=innerHeight;
+    if(w!==lw||h!==lh){ lw=w;lh=h; renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+      renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix(); }
+    apply();
+    camera.position.set(dist*Math.cos(el)*Math.sin(az), dist*Math.sin(el)+.5, dist*Math.cos(el)*Math.cos(az));
+    camera.lookAt(0,.55,0); camera.updateMatrixWorld(); placeTags();
+    renderer.render(scene,camera); requestAnimationFrame(loop);
+  }
+  setJoints(0,30,0); loop();
+})();
+</script>
+</body>
+</html>

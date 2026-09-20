@@ -294,6 +294,32 @@ unchanged.
 link goes stale. Without a DSN every tracing helper is a no-op, so the robot
 gains no hard dependency on it.
 
+### The real arm: 3 DOF (`arm3dof.py`, `arm3dof_server.py`)
+
+The arm that actually got built has three joints, not four:
+
+    q1  base rotation    swings the whole arm left and right
+    q2  arm pitch        swings the tip forward/down and back/up on an arc
+    q3  razor tilt       flicks the blade; sets how much hair is left
+
+```
+uv run python arm3dof_server.py                        # simulate
+uv run python arm3dof_server.py --dry-run              # print servo pulses
+uv run python arm3dof_server.py --servo-port /dev/ttyACM0
+```
+
+The arm is a rigid link on a servo horn, so the tip sits at a FIXED distance
+from the pitch pivot: reach and height are one coupled arc, not two axes.
+Two angles place the tip on a sphere and the third aims the tool — the same
+shape as the rail machine this project began with, which is why the motion
+mapping is the one already proven there rather than something new. The phone
+sends the same POSE protocol, so nothing changes in FadePose.
+
+**Measure your arm.** `ArmSpec` holds every dimension and the defaults are
+placeholders: `--arm-len`, `--pivot-h`, and the joint limits in the dataclass.
+`--hand-span` tunes how much hand movement sweeps a joint; `--invert-yaw` and
+`--invert-pitch` fix an axis that runs backwards once the servos are wired.
+
 ### Driving real servos (`servo_link.py`, `firmware/fade_ninja_servos/`)
 
 ```

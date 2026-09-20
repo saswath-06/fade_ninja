@@ -186,6 +186,126 @@ class ServoDriver:
             self.link.close()
 
 
+class Servo3Driver:
+    """Three servos: base rotation, arm pitch, razor tilt.
+
+    Shares ServoCal, the clamping and the easing with the four-servo driver;
+    the arm that actually got built has three joints, so this is the one that
+    ships. Limits come from the ArmSpec rather than the 4-DOF constants.
+    """
+
+    def __init__(self, spec, link=None, cals=None,
+                 max_step_deg: float = MAX_STEP_DEG, dry_run: bool = False):
+        self.spec = spec
+        self.link = link
+        self.dry_run = dry_run or link is None
+        self.cals = tuple(cals) if cals else tuple(ServoCal() for _ in range(3))
+        self.max_step = max_step_deg
+        self.frozen = True
+        self.clamped = False
+        self.position = tuple(spec.home)
+        self.pulses: tuple[int, int, int] | None = None
+        if self.link is not None:
+            reply = self.link.command("HELLO")
+            if not reply.startswith("OK fade-ninja-servo"):
+                raise ServoLinkError(f"unexpected HELLO reply: {reply!r}")
+
+    @classmethod
+    def open(cls, spec, port: str, baud: int = 115200, **kw) -> "Servo3Driver":
+        from .hardware_arm import SerialLink
+        return cls(spec, SerialLink(port, baud), **kw)
+
+    def home(self) -> None:
+        if self.link is not None:
+            reply = self.link.command("HOME", timeout=10.0)
+            if not reply.startswith("OK"):
+                raise ServoLinkError(f"homing refused: {reply}")
+        self.position = tuple(self.spec.home)
+        self.frozen = False
+
+    def set_joints(self, q1: float, q2: float, q3: float) -> None:
+        lim = self.spec.limits()
+        target, self.clamped = [], False
+        for i, v in enumerate((q1, q2, q3)):
+            lo, hi = lim[i]
+            c = min(hi, max(lo, float(v)))
+            self.clamped = self.clamped or c != float(v)
+            target.append(c)
+        # never jump: the arm may be resting anywhere when the link opens
+        self.position = tuple(
+            step_toward(tuple(self.position) + (0.0,),
+                        tuple(target) + (0.0,), self.max_step)[:3])
+        self.frozen = False
+        self.pulses = tuple(
+            self.cals[i].pulse_for(self.position[i], *lim[i]) for i in range(3))
+        if self.link is not None:
+            reply = self.link.command("J %.2f %.2f %.2f" % self.position)
+            if not reply.startswith("OK"):
+                raise ServoLinkError(f"J refused: {reply}")
+        elif self.dry_run:
+            print(f"SERVO us={self.pulses} deg=("
+                  + ", ".join(f"{v:.1f}" for v in self.position) + ")")
+
+    def freeze(self) -> None:
+        """Stop commanding. Servos keep holding — a limp arm falls."""
+        self.frozen = True
+
+    def relax(self) -> None:
+        if self.link is not None:
+            self.link.command("RELAX")
+        self.frozen = True
+
+    def close(self) -> None:
+        if self.link is not None and hasattr(self.link, "close"):
+            self.link.close()
+
+
+class FakeServo3Board:
+    """The firmware's side for a three-servo arm, in Python."""
+
+    def __init__(self, spec, max_step_deg: float = MAX_STEP_DEG):
+        self.spec = spec
+        self.position = list(spec.home)
+        self.max_step = max_step_deg
+        self.attached = True
+        self.clamped_count = 0
+
+    def command(self, line: str, timeout: float = 2.0) -> str:
+        if line == "HELLO":
+            return HELLO_REPLY
+        if line == "HOME":
+            self.position = list(self.spec.home)
+            self.attached = True
+            return "OK"
+        if line == "RELAX":
+            self.attached = False
+            return "OK"
+        if line == "P":
+            return "POS " + " ".join(f"{v:.2f}" for v in self.position)
+        if line.startswith("J "):
+            try:
+                vals = [float(x) for x in line[2:].split()]
+            except ValueError:
+                return "ERR bad J"
+            if len(vals) != 3:
+                return "ERR J takes three angles"
+            lim = self.spec.limits()
+            target, hit = [], False
+            for i, v in enumerate(vals):
+                lo, hi = lim[i]
+                c = min(hi, max(lo, v))
+                hit = hit or c != v
+                target.append(c)
+            if hit:
+                self.clamped_count += 1
+            self.attached = True
+            self.position = list(step_toward(tuple(self.position) + (0.0,),
+                                             tuple(target) + (0.0,),
+                                             self.max_step)[:3])
+            return "OK"
+        return "ERR unknown"
+
+
 class FakeServoBoard:
     """The firmware's side of the protocol, in Python.
 
