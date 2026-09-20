@@ -24,7 +24,10 @@ from .eezy_ik import (
 from .pose_protocol import RelativePose, pitch_deg_from_quat
 
 DEFAULT_SCALE = 0.3
-MAX_SLEW_DEG_S = (60.0, 60.0, 90.0, 120.0)  # q1..q4
+# q1..q4. 60 deg/s left the arm ~0.9 s behind the hand, which reads as bad
+# tracking; 180 brings it to ~0.3 s and still bounds servo speed. Lower it
+# for real hardware once the servos' real limits are measured.
+MAX_SLEW_DEG_S = (180.0, 180.0, 240.0, 300.0)
 
 
 @dataclass

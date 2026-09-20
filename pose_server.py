@@ -32,11 +32,19 @@ SIM_PAGE = Path(__file__).parent / "tools" / "arm4dof_sim.html"
 
 class PoseServer:
     def __init__(self, host: str = "0.0.0.0", port: int = DEFAULT_PORT,
-                 scale: float = 0.3, hardware: ServoDriver | None = None):
+                 scale: float = 0.3, hardware: ServoDriver | None = None,
+                 slew: float = 0.0):
         self.host = host
         self.port = port
         self.session = PoseSession()
-        self.mapper = PoseMapper(scale=scale)
+        if slew > 0:
+            # q3/q4 keep their ratio to the base rate
+            base = slew
+            self.mapper = PoseMapper(scale=scale,
+                                     max_slew=(base, base, base * 4 / 3,
+                                               base * 5 / 3))
+        else:
+            self.mapper = PoseMapper(scale=scale)
         self.hardware = hardware
         self._lock = threading.Lock()
         self._last_pose_mono = 0.0
@@ -234,6 +242,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--port", type=int, default=DEFAULT_PORT)
     p.add_argument("--http-port", type=int, default=SIM_HTTP_PORT)
     p.add_argument("--scale", type=float, default=0.3)
+    p.add_argument("--slew", type=float, default=0.0,
+                   help="joint speed limit in deg/s for q1/q2 (q3, q4 scale "
+                        "with it); higher tracks the hand more tightly")
     p.add_argument("--hardware", action="store_true")
     p.add_argument("--dry-run", action="store_true",
                    help="with --hardware, print pulses, no GPIO")
@@ -245,7 +256,7 @@ def main(argv: list[str] | None = None) -> None:
                          else False)
 
     srv = PoseServer(host=args.host, port=args.port, scale=args.scale,
-                     hardware=hw)
+                     hardware=hw, slew=args.slew)
     srv.start()
     httpd = serve_sim(srv, args.http_port, host=args.host)
     print(f"Pose UDP  udp://{local_ip()}:{args.port}")

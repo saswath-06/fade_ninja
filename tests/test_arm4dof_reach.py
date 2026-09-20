@@ -141,3 +141,38 @@ def test_joints_arrive_together_rather_than_one_finishing_early():
     moved = [abs(st.q1 - start.q1), abs(st.q2 - start.q2), abs(st.q3 - start.q3)]
     assert max(moved) <= 10.0 * 0.1 + 1e-6, "a joint exceeded its rate limit"
     assert max(moved) > 0.0
+
+
+# ------------------------------------------------------------- convergence
+
+def test_the_tip_actually_reaches_a_held_target():
+    """Convergence was never pinned: a mapper that merely moves toward the
+    target looks right in a screenshot but never arrives."""
+    from fadegpt.eezy_ik import forward_kinematics as fk
+    m = PoseMapper()
+    m.update(rel(), now=0.0)
+    hold = (0.30, 0.19, 0.15)
+    target = m.phone_to_arm_mm(*hold)
+    t = 0.0
+    for _ in range(300):                       # 6 s at 50 Hz
+        t += 0.02
+        st = m.update(rel(x=hold[0], y=hold[1], z=hold[2]), now=t)
+    tip = fk(st.q1, st.q2, st.q3)
+    assert math.dist(tip, target) < 0.5, "arm never converged on the target"
+
+
+def test_tracking_lag_stays_responsive():
+    """60 deg/s left the arm ~0.9 s behind the hand, which reads as bad
+    tracing. Guard the responsiveness we settled on."""
+    from fadegpt.eezy_ik import forward_kinematics as fk
+    m = PoseMapper()
+    m.update(rel(), now=0.0)
+    hold = (0.30, 0.19, 0.15)
+    target = m.phone_to_arm_mm(*hold)
+    t = 0.0
+    for _ in range(300):
+        t += 0.02
+        st = m.update(rel(x=hold[0], y=hold[1], z=hold[2]), now=t)
+        if math.dist(fk(st.q1, st.q2, st.q3), target) < 1.0:
+            break
+    assert t < 0.45, f"took {t:.2f}s to catch up with the hand"

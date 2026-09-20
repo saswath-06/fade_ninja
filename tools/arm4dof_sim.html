@@ -76,13 +76,17 @@ Three.js could not be fetched — check the network, then reload.</div></div>
 </div>
 
 <div class="hud" id="right">
-  <div class="kv"><span>tip x</span><span id="tx">0</span></div>
-  <div class="kv"><span>tip y</span><span id="ty">0</span></div>
-  <div class="kv"><span>tip z</span><span id="tz">0</span></div>
-  <div class="kv" style="margin-top:8px"><span>phone x</span><span id="px">0.000</span></div>
-  <div class="kv"><span>phone y</span><span id="py">0.000</span></div>
-  <div class="kv"><span>phone z</span><span id="pz">0.000</span></div>
-  <div class="kv" style="margin-top:8px"><span>reach</span><span id="reach">—</span></div>
+  <div style="font-size:10px;letter-spacing:.08em;color:var(--muted);margin-bottom:5px">
+    CLIPPER TIP</div>
+  <div class="kv"><span>height</span><span id="tup">0</span></div>
+  <div class="kv"><span>reach</span><span id="tfw">0</span></div>
+  <div class="kv"><span>lateral</span><span id="tlt">0</span></div>
+  <div style="font-size:10px;letter-spacing:.08em;color:var(--muted);margin:10px 0 5px">
+    YOUR HAND</div>
+  <div class="kv"><span>up</span><span id="pup">0</span></div>
+  <div class="kv"><span>right</span><span id="prt">0</span></div>
+  <div class="kv"><span>forward</span><span id="pfw">0</span></div>
+  <div class="kv" style="margin-top:10px"><span>in range</span><span id="reach">—</span></div>
 </div>
 
 <div class="hud" id="foot">
@@ -122,6 +126,11 @@ Three.js could not be fetched — check the network, then reload.</div></div>
   const grid = new THREE.GridHelper(6, 24, 0x2a3340, 0x1b2129);
   scene.add(grid);
   scene.add(new THREE.AxesHelper(0.45));
+  const AXIS_TAGS = [
+    {t:"UP",      p:[0, 0.62, 0],  c:"#3fb950"},
+    {t:"FORWARD", p:[0.62, 0, 0],  c:"#f85149"},
+    {t:"LATERAL", p:[0, 0, 0.62],  c:"#58a6ff"},
+  ];
 
   // ---- materials
   const mLink = new THREE.MeshStandardMaterial({color:0x5b6675, roughness:0.45, metalness:0.55});
@@ -237,8 +246,19 @@ Three.js could not be fetched — check the network, then reload.</div></div>
     {el: makeTag("ELBOW", "#3fb0a0"), obj: jElbow, off: 0.16},
     {el: makeTag("CLIPPER", "#f0883e"), obj: wrist, off: -0.20},
   ];
+  const AXIS_EL = AXIS_TAGS.map(a => {
+    const e = makeTag(a.t, a.c); e.style.opacity = "0.75"; return e;
+  });
   const _v = new THREE.Vector3();
   function placeTags() {
+    AXIS_TAGS.forEach((a, i) => {
+      _v.set(a.p[0], a.p[1], a.p[2]).project(camera);
+      const e = AXIS_EL[i];
+      if (_v.z > 1) { e.style.display = "none"; return; }
+      e.style.display = "block";
+      e.style.left = ((_v.x*0.5+0.5)*innerWidth) + "px";
+      e.style.top = ((-_v.y*0.5+0.5)*innerHeight) + "px";
+    });
     for (const t of TAGS) {
       t.obj.getWorldPosition(_v); _v.y += t.off; _v.project(camera);
       if (_v.z > 1) { t.el.style.display = "none"; continue; }
@@ -300,13 +320,15 @@ Three.js could not be fetched — check the network, then reload.</div></div>
     $("v2").textContent = st.q2.toFixed(1); bar("b2", st.q2, LIM.q2);
     $("v3").textContent = st.q3.toFixed(1); bar("b3", st.q3, LIM.q3);
     $("v4").textContent = st.q4.toFixed(1); bar("b4", st.q4, LIM.q4);
-    $("tx").textContent = st.x.toFixed(0) + " mm";
-    $("ty").textContent = st.y.toFixed(0) + " mm";
-    $("tz").textContent = st.z.toFixed(0) + " mm";
-    $("px").textContent = (st.phone_x ?? 0).toFixed(3);
-    $("py").textContent = (st.phone_y ?? 0).toFixed(3);
-    $("pz").textContent = (st.phone_z ?? 0).toFixed(3);
-    $("reach").textContent = st.reachable ? "ok" : "OUT";
+    // the arm's kinematics are Z-up while ARKit is Y-up, so raw x/y/z
+    // letters read as crossed axes. Label both by physical direction.
+    $("tup").textContent = st.z.toFixed(0) + " mm";   // arm +Z is height
+    $("tfw").textContent = st.x.toFixed(0) + " mm";   // arm +X is reach
+    $("tlt").textContent = st.y.toFixed(0) + " mm";   // arm +Y is lateral
+    $("pup").textContent = ((st.phone_y ?? 0)*1000).toFixed(0) + " mm";
+    $("prt").textContent = ((st.phone_x ?? 0)*1000).toFixed(0) + " mm";
+    $("pfw").textContent = ((-(st.phone_z ?? 0))*1000).toFixed(0) + " mm";
+    $("reach").textContent = st.reachable ? "yes" : "OUT OF RANGE";
 
     ghost.position.set(1.7 + (st.phone_x ?? 0)*3, 0.9 + (st.phone_y ?? 0)*3,
                        (st.phone_z ?? 0)*3);
