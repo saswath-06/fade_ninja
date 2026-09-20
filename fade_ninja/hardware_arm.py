@@ -165,13 +165,60 @@ class HardwareArm:
 
 # ------------------------------------------------------------------ links
 
+def list_serial_ports() -> list[tuple[str, str]]:
+    """Every serial device the OS can see, as (device, description)."""
+    try:
+        from serial.tools import list_ports
+    except ImportError:
+        return []
+    return [(p.device, p.description or "") for p in list_ports.comports()]
+
+
+# macOS calls the Arduino /dev/cu.usbmodem*, Linux /dev/ttyACM*. Nothing in
+# the code should depend on which laptop is plugged in.
+_BOARD_HINTS = ("usbmodem", "usbserial", "wchusbserial", "ttyACM", "ttyUSB")
+
+
+def find_serial_port() -> str:
+    """Auto-detect the board. Raises with the actual port list on failure,
+    because 'port not found' with no list sends people hunting the wrong
+    thing — usually a charge-only cable or a board that never enumerated."""
+    ports = list_serial_ports()
+    hits = [d for d, _ in ports if any(h in d for h in _BOARD_HINTS)]
+    if len(hits) == 1:
+        return hits[0]
+    if len(hits) > 1:
+        raise LinkError("several boards are plugged in; pass one with "
+                        f"--servo-port: {', '.join(hits)}")
+    seen = ", ".join(d for d, _ in ports) or "none at all"
+    raise LinkError(
+        "no Arduino-like serial port found. Ports present: " + seen + ".\n"
+        "  - a charge-only USB cable enumerates nothing; try a data cable\n"
+        "  - check the board appears in Arduino IDE's Tools > Port\n"
+        "  - /dev/ttyACM0 is a Linux name; macOS uses /dev/cu.usbmodem*")
+
+
 class SerialLink:
     """pyserial transport. Imported lazily so the rest of the package never
     needs pyserial installed."""
 
     def __init__(self, port: str, baud: int):
-        import serial  # pip install pyserial
-        self.ser = serial.Serial(port, baud, timeout=2.0)
+        try:
+            import serial  # pip install pyserial
+        except ImportError as e:      # noqa: F841
+            raise LinkError("pyserial is not installed — run: "
+                            "uv pip install pyserial") from None
+        if port in ("", "auto"):
+            port = find_serial_port()
+        self.port = port
+        try:
+            self.ser = serial.Serial(port, baud, timeout=2.0)
+        except serial.SerialException as e:
+            seen = ", ".join(d for d, _ in list_serial_ports()) or "none at all"
+            raise LinkError(f"could not open {port}: {e}\n"
+                            f"  ports present: {seen}\n"
+                            "  pass --servo-port with no value to auto-detect"
+                            ) from None
         import time
         time.sleep(2.0)               # Uno resets on port open
         self.ser.reset_input_buffer()

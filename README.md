@@ -305,7 +305,22 @@ The arm that actually got built has three joints, not four:
 ```
 uv run python arm3dof_server.py                        # simulate
 uv run python arm3dof_server.py --dry-run              # print servo pulses
-uv run python arm3dof_server.py --servo-port /dev/ttyACM0
+uv run python arm3dof_server.py --servo-port           # find the board, drive it
+uv run python arm3dof_server.py --list-ports           # what is plugged in
+```
+
+`--servo-port` with no value auto-detects: the board is `/dev/cu.usbmodem*`
+on macOS and `/dev/ttyACM*` on Linux, and hardcoding either one breaks on the
+other laptop. Pass a port explicitly only when two boards are attached.
+
+**Flash the board first.** `firmware/fade_ninja_arm3/` is the three-servo
+sketch that matches this server; the older `fade_ninja_servos/` takes four
+angles and will reject `J`. A board that is plugged in but never answers
+`HELLO` is almost always an unflashed board, not a bad port:
+
+```
+tools/flash_firmware.sh            # compile only, changes nothing
+tools/flash_firmware.sh --upload   # ERASES the sketch on the board
 ```
 
 The arm is a rigid link on a servo horn, so the tip sits at a FIXED distance
@@ -343,9 +358,12 @@ crash mid-command and the horn is the last line:
 
 `ServoCal` (pulse range, direction, offset) is per servo and is **not
 guessed** — horn angle and end-stops differ for every build. Measure them
-with `tools/servo_calibrate.py` and paste the numbers into both the config
-and the sketch. Servos need their own supply with a common ground; four
-stalling on USB power will brown out the board. The e-stop stays physical.
+with `tools/servo_calibrate.py auto` (add `--dof 4` for the four-joint rig)
+and paste the numbers into both the config and the sketch. Calibration needs
+a firmware that accepts `US <joint> <microseconds>`; `fade_ninja_arm3` has it,
+the four-servo reference sketch does not. Servos need their own supply with a
+common ground; several stalling on USB power will brown out the board. The
+e-stop stays physical.
 
 ### Hardware path (Pi 4 + Arduino)
 

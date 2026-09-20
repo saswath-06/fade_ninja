@@ -180,7 +180,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--port", type=int, default=DEFAULT_UDP)
     p.add_argument("--http-port", type=int, default=DEFAULT_HTTP)
     p.add_argument("--servo-port", default=None, metavar="SERIAL",
-                   help="drive the real servos, e.g. /dev/ttyACM0")
+                   nargs="?", const="auto",
+                   help="drive the real servos; bare flag or 'auto' finds the "
+                        "board (macOS /dev/cu.usbmodem*, Linux /dev/ttyACM*)")
+    p.add_argument("--list-ports", action="store_true",
+                   help="print the serial ports this machine can see, then exit")
     p.add_argument("--dry-run", action="store_true",
                    help="print pulse widths; nothing moves")
     p.add_argument("--arm-len", type=float, default=150.0, help="mm")
@@ -194,6 +198,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.list_ports:
+        from fade_ninja.hardware_arm import list_serial_ports
+        ports = list_serial_ports()
+        if not ports:
+            print("  no serial ports at all — is pyserial installed?")
+        for dev, desc in ports:
+            print(f"  {dev}   {desc}")
+        return 0
+
     spec = ArmSpec(arm_len_mm=args.arm_len, pivot_h_mm=args.pivot_h)
     cfg = TeleopConfig(hand_span_mm=args.hand_span,
                        invert_yaw=args.invert_yaw,
@@ -201,9 +215,22 @@ def main(argv=None) -> int:
 
     hw = None
     if args.servo_port:
-        hw = Servo3Driver.open(spec, args.servo_port)
+        from fade_ninja.hardware_arm import LinkError
+        from fade_ninja.servo_link import ServoLinkError
+        try:
+            hw = Servo3Driver.open(spec, args.servo_port)
+        except (LinkError, ServoLinkError) as e:
+            # a board that is plugged in but silent is the everyday case:
+            # the sketch is not flashed. Say so rather than blaming the port.
+            print(f"\n  Cannot reach the servo board:\n  {e}\n")
+            print("  If the port is right, the board is not running our "
+                  "firmware:\n"
+                  "  flash firmware/fade_ninja_arm3/fade_ninja_arm3.ino "
+                  "from the Arduino IDE.\n")
+            print("  Run with --dry-run to drive the viewer with no hardware.")
+            return 2
         hw.home()
-        print(f"Servos    {args.servo_port} (homed)")
+        print(f"Servos    {hw.link.port} (homed)")
     elif args.dry_run:
         hw = Servo3Driver(spec, FakeServo3Board(spec), dry_run=True)
         hw.home()
