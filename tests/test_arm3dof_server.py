@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from arm3dof_server import Arm3Server
+from arm3dof_server import Arm3Server, serve_viewer
 from fade_ninja.arm3dof import ArmSpec
 from fade_ninja.servo_link import FakeServo3Board, Servo3Driver
 
@@ -102,3 +102,47 @@ def test_a_quiet_phone_reads_as_stale(rig):
     assert srv.stale is False
     srv._last_rx -= 1.0
     assert srv.stale is True
+
+
+def test_ping_is_answered_and_not_counted():
+    """The phone cannot tell a working link from a black hole without a
+    reply, and the probe must not show up as a rejected packet."""
+    import socket
+    srv = Arm3Server(ArmSpec(), port=0)
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(2.0)
+        s.sendto(b"PING", ("127.0.0.1", srv.port))
+        assert s.recvfrom(64)[0] == b"PONG"
+        assert srv.packets == 0 and srv.rejected == 0
+    finally:
+        srv.close()
+
+
+def test_garbage_gets_an_error_reply_not_silence():
+    """Silence and a dropped packet look the same from the phone."""
+    import socket
+    srv = Arm3Server(ArmSpec(), port=0)
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(2.0)
+        s.sendto(b"NONSENSE 1 2 3", ("127.0.0.1", srv.port))
+        assert s.recvfrom(512)[0].startswith(b"ERR")
+        assert srv.rejected == 1
+    finally:
+        srv.close()
+
+
+def test_status_endpoint_serves_json():
+    import json as _json
+    import urllib.request
+    srv = Arm3Server(ArmSpec(), port=0)
+    httpd = serve_viewer(srv, 0)
+    try:
+        url = f"http://127.0.0.1:{httpd.server_address[1]}/status"
+        with urllib.request.urlopen(url, timeout=5) as r:
+            d = _json.loads(r.read())
+        assert "packets" in d and "q1" in d
+    finally:
+        httpd.shutdown()
+        srv.close()

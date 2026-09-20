@@ -73,6 +73,17 @@ class Arm3Server:
                     self._handle(line.strip(), addr)
 
     def _handle(self, line: str, addr) -> None:
+        if line == "PING":
+            # A link probe, not a pose. UDP sends succeed even when the
+            # network drops every packet, so the phone cannot tell it is
+            # talking to anything until something answers. Not counted as a
+            # packet or a rejection: it is not part of the control stream.
+            if addr is not None:
+                try:
+                    self.sock.sendto(b"PONG", addr)
+                except OSError:
+                    pass
+            return
         try:
             msg = parse_message(line)
             ack = self.session.handle(msg)
@@ -80,6 +91,13 @@ class Arm3Server:
             with self._lock:
                 self.rejected += 1
                 self.last_error = str(e)
+            if addr is not None:
+                # answer even when refusing: silence is indistinguishable
+                # from a dropped packet, and the two need different fixes
+                try:
+                    self.sock.sendto(f"ERR {e}".encode()[:400], addr)
+                except OSError:
+                    pass
             return
         if addr is not None:
             try:
@@ -143,6 +161,17 @@ def serve_viewer(server: Arm3Server, http_port: int) -> ThreadingHTTPServer:
             pass
 
         def do_GET(self):
+            if self.path.startswith("/status"):
+                # plain JSON, no websocket: `curl host:8464/status` answers
+                # "is the phone reaching me" from any machine on the network
+                body = json.dumps(server.status_dict()).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if self.headers.get("Upgrade", "").lower() == "websocket":
                 key = next((v.encode() for k, v in self.headers.items()
                             if k.lower() == "sec-websocket-key"), None)

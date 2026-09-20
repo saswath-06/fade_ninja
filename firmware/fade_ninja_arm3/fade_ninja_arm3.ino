@@ -32,7 +32,9 @@
 const int N = 3;
 
 // ------------------------------------------------------------------ pins
-const int PINS[N] = { 9, 10, 11 };   // q1 base rotation, q2 arm pitch, q3 razor
+// As wired on the build: D2 base rotation, D3 shaft up/down, D4 forward/back.
+// Any PWM-capable pin works; these are the ones the harness plugs into.
+const int PINS[N] = { 2, 3, 4 };
 
 // ---------------------------------------------- joint limits (degrees)
 // these mirror ArmSpec in fade_ninja/arm3dof.py; change both together

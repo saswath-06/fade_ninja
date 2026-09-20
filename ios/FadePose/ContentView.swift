@@ -25,6 +25,13 @@ final class PoseStreamer: NSObject, ObservableObject, ARSessionDelegate {
     @Published var trackingNormal = false
     /// While held, the arm holds its position and only the cut angle moves.
     @Published var tiltOnly = false
+    /// True once the robot has replied to something we sent. UDP is
+    /// connectionless, so "connected" means nothing on its own: on a campus
+    /// or guest network the send succeeds and the packets are dropped
+    /// somewhere in the middle, and without this the app looks fine while
+    /// the arm never moves.
+    @Published var linked = false
+    @Published var acks = 0
 
     private let session = ARSession()
     private var connection: NWConnection?
@@ -65,8 +72,35 @@ final class PoseStreamer: NSObject, ObservableObject, ARSessionDelegate {
         let nwPort = NWEndpoint.Port(rawValue: port)!
         let conn = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .udp)
         connection = conn
+        linked = false
+        acks = 0
         conn.start(queue: .main)
-        status = "UDP target \(host):\(port) (connectionless)"
+        receiveAcks(on: conn)
+        status = "sending to \(host):\(port) — waiting for the robot"
+        // A single probe, so the link is proven before anyone presses Start.
+        // PING is not in the protocol, so the server rejects it and replies
+        // with an error: an error coming back still proves the round trip.
+        sendLine("PING")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self, !self.linked else { return }
+            self.status = "no reply from \(host) — same Wi-Fi? try hotspot"
+        }
+    }
+
+    /// The server acks every packet. Reading those acks is the only way the
+    /// phone can know its packets are arriving.
+    private func receiveAcks(on conn: NWConnection) {
+        conn.receiveMessage { [weak self] data, _, _, error in
+            guard let self else { return }
+            if data != nil, !data!.isEmpty {
+                self.acks += 1
+                if !self.linked {
+                    self.linked = true
+                    self.status = self.streaming ? "streaming" : "robot linked"
+                }
+            }
+            if error == nil { self.receiveAcks(on: conn) }
+        }
     }
 
     func startStreaming() {
@@ -605,9 +639,16 @@ struct RemoteView: View {
             .padding(.horizontal, 12).padding(.vertical, 10)
             .background(Ink.bg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-            Text(streamer.status)
-                .font(.system(size: 11, design: .rounded))
-                .foregroundStyle(Ink.dim)
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(streamer.linked ? Ink.green : Ink.red)
+                    .frame(width: 7, height: 7)
+                Text(streamer.linked
+                     ? "robot replied (\(streamer.acks) acks)"
+                     : streamer.status)
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(Ink.dim)
+            }
         }
     }
 
