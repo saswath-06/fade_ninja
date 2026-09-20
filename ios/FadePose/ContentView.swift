@@ -437,10 +437,11 @@ struct SignInView: View {
                             .fill(RadialGradient(colors: [Ink.red.opacity(0.35), .clear],
                                                  center: .center, startRadius: 4, endRadius: 96))
                             .frame(width: 190, height: 190)
-                        Image(systemName: "scissors")
-                            .font(.system(size: 62, weight: .semibold))
-                            .foregroundStyle(Ink.red)
-                            .rotationEffect(.degrees(-20))
+                        Image("NinjaMark")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(height: 168)
+                            .shadow(color: .black.opacity(0.45), radius: 18, y: 8)
                     }
 
                     VStack(spacing: 7) {
@@ -916,10 +917,12 @@ struct ContentView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Image(systemName: "scissors")
-                .font(.system(size: 17, weight: .bold))
-                .foregroundStyle(Ink.red)
-                .rotationEffect(.degrees(-20))
+            Image("NinjaMark")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 30, height: 30)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Ink.red.opacity(0.7), lineWidth: 1.5))
             VStack(alignment: .leading, spacing: 1) {
                 Text("FADE NINJA")
                     .font(.system(size: 15, weight: .heavy, design: .rounded))
