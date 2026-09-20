@@ -215,61 +215,354 @@ struct FadePoseApp: App {
     }
 }
 
-struct ContentView: View {
-    @StateObject private var streamer = PoseStreamer()
-    @AppStorage("host") private var host = "172.20.10.2"
-    @AppStorage("port") private var portText = "8463"
+
+// MARK: - Cut library API
+
+/// One saved cut, as the server returns it.
+struct Cut: Identifiable, Decodable, Equatable {
+    let id: String
+    let name: String
+    let duration_s: Double
+    let n_samples: Int
+}
+
+private struct SignInReply: Decodable {
+    struct U: Decodable { let id: String; let handle: String }
+    let user: U
+    let takes: [Cut]
+}
+private struct TakesReply: Decodable { let takes: [Cut] }
+private struct SaveReply: Decodable { let take: Cut; let takes: [Cut] }
+private struct ApiErrorBody: Decodable { let error: String }
+
+/// Talks to pose_server's dashboard API over HTTP. The pose stream stays on
+/// UDP; this is the slow path — signing in, listing and replaying cuts.
+@MainActor
+final class Library: ObservableObject {
+    @Published var handle = ""
+    @Published var userId = ""
+    @Published var cuts: [Cut] = []
+    @Published var busy = false
+    @Published var note = ""
+    @Published var recording = false
+
+    /// Host is shared with the UDP stream; the API sits on the next port up,
+    /// matching pose_server's defaults (8463 UDP, 8464 HTTP).
+    var host = "172.20.10.2"
+    var httpPort: UInt16 = 8464
+
+    var signedIn: Bool { !userId.isEmpty }
+
+    private func post<T: Decodable>(_ path: String, _ body: [String: Any],
+                                    as type: T.Type) async throws -> T {
+        var payload = body
+        payload["user_id"] = userId
+        var req = URLRequest(url: URL(string: "http://\(host):\(httpPort)\(path)")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        req.timeoutInterval = 8
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if !(200..<300).contains(code) {
+            let msg = (try? JSONDecoder().decode(ApiErrorBody.self, from: data))?.error
+            throw NSError(domain: "FadeNinja", code: code,
+                          userInfo: [NSLocalizedDescriptionKey: msg ?? "HTTP \(code)"])
+        }
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    private func run(_ label: String, _ work: @escaping () async throws -> Void) {
+        busy = true
+        Task {
+            do { try await work() }
+            catch { note = "\(label): \(error.localizedDescription)" }
+            busy = false
+        }
+    }
+
+    func signIn(handle h: String) {
+        run("sign in") {
+            let r = try await self.post("/api/signin", ["handle": h], as: SignInReply.self)
+            self.userId = r.user.id
+            self.handle = r.user.handle
+            self.cuts = r.takes
+            self.note = "signed in as \(r.user.handle)"
+        }
+    }
+
+    func signOut() {
+        userId = ""; handle = ""; cuts = []; recording = false; note = ""
+    }
+
+    func refresh() {
+        guard signedIn else { return }
+        run("load cuts") {
+            self.cuts = try await self.post("/api/takes", [:], as: TakesReply.self).takes
+        }
+    }
+
+    func startRecording() {
+        run("record") {
+            _ = try await self.post("/api/record/start", [:], as: [String: Bool].self)
+            self.recording = true
+            self.note = "recording — move the phone"
+        }
+    }
+
+    func saveRecording(name: String) {
+        run("save") {
+            let r = try await self.post("/api/record/stop", ["name": name], as: SaveReply.self)
+            self.cuts = r.takes
+            self.recording = false
+            self.note = "saved \(r.take.name) (\(String(format: "%.1f", r.take.duration_s))s)"
+        }
+    }
+
+    func replay(_ cut: Cut) {
+        run("replay") {
+            _ = try await self.post("/api/replay", ["take_id": cut.id],
+                                    as: [String: AnyCodableStub].self)
+            self.note = "replaying \(cut.name)"
+        }
+    }
+
+    func stopReplay() {
+        run("stop") {
+            _ = try await self.post("/api/replay/stop", [:], as: [String: AnyCodableStub?].self)
+            self.note = "replay stopped"
+        }
+    }
+}
+
+/// Minimal stand-in so replies we do not read still decode.
+struct AnyCodableStub: Decodable {
+    init(from decoder: Decoder) throws { _ = try? decoder.singleValueContainer() }
+}
+
+// MARK: - Sign in
+
+struct SignInView: View {
+    @ObservedObject var library: Library
+    @Binding var host: String
+    @State private var handle = ""
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text("FadePose").font(.largeTitle.bold())
-            Text(streamer.status).foregroundStyle(.secondary)
-            Text("tracking: \(streamer.trackingLabel)")
-                .foregroundStyle(streamer.trackingNormal ? .green : .orange)
+        VStack(spacing: 22) {
+            Spacer()
+            Text("FADE NINJA").font(.system(size: 34, weight: .heavy))
+            Text("your cuts, saved and replayable")
+                .font(.subheadline).foregroundStyle(.secondary)
 
-            HStack {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("ROBOT ADDRESS").font(.caption2.bold())
+                    .foregroundStyle(.secondary)
                 TextField("host", text: $host)
                     .textFieldStyle(.roundedBorder)
                     .autocapitalization(.none)
-                TextField("port", text: $portText)
+                    .keyboardType(.decimalPad)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("YOUR HANDLE").font(.caption2.bold())
+                    .foregroundStyle(.secondary)
+                TextField("e.g. saswath", text: $handle)
                     .textFieldStyle(.roundedBorder)
-                    .frame(width: 80)
+                    .autocapitalization(.none)
+                    .autocorrectionDisabled()
             }
 
-            Button("Connect UDP") {
-                streamer.connect(host: host, port: UInt16(portText) ?? 8463)
-            }
-
-            Text(streamer.tiltOnly ? "POSITION LOCKED — tilt only"
-                                   : "HOLD TO LOCK POSITION")
-                .font(.system(size: 15, weight: .bold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 22)
-                .background(streamer.tiltOnly ? Color.orange.opacity(0.85)
-                                              : Color.gray.opacity(0.22))
-                .foregroundColor(streamer.tiltOnly ? .black : .primary)
-                .cornerRadius(14)
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { _ in if streamer.streaming { streamer.tiltOnly = true } }
-                        .onEnded { _ in streamer.tiltOnly = false }
-                )
-                .opacity(streamer.streaming ? 1 : 0.45)
-
-            Button(streamer.streaming ? "Stop" : "Start") {
-                if streamer.streaming { streamer.stopStreaming() }
-                else { streamer.startStreaming() }
+            Button {
+                library.host = host
+                library.signIn(handle: handle)
+            } label: {
+                Text(library.busy ? "Signing in…" : "Sign in")
+                    .frame(maxWidth: .infinity).padding(.vertical, 6)
             }
             .buttonStyle(.borderedProminent)
-            .tint(streamer.streaming ? .red : .green)
-            .disabled(!streamer.streaming && !streamer.trackingNormal)
+            .disabled(handle.trimmingCharacters(in: .whitespaces).count < 2 || library.busy)
 
-            Text("Camera is used only for ARKit tracking. Frames are never sent.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text("A handle is all we store — no password. It only decides whose cuts are whose.")
+                .font(.caption).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+
+            if !library.note.isEmpty {
+                Text(library.note).font(.caption).foregroundStyle(.orange)
+                    .multilineTextAlignment(.center)
+            }
+            Spacer()
         }
-        .padding()
-        .onAppear { streamer.startSession() }
+        .padding(24)
+    }
+}
+
+// MARK: - Cut library
+
+struct LibraryView: View {
+    @ObservedObject var library: Library
+    @ObservedObject var streamer: PoseStreamer
+    @State private var takeName = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("MY CUTS").font(.caption.bold()).foregroundStyle(.secondary)
+                Spacer()
+                Button("Refresh") { library.refresh() }.font(.caption)
+            }
+
+            TextField("name this cut", text: $takeName)
+                .textFieldStyle(.roundedBorder)
+
+            HStack(spacing: 10) {
+                Button(library.recording ? "Recording…" : "Start recording") {
+                    library.startRecording()
+                }
+                .buttonStyle(.borderedProminent).tint(.red)
+                .disabled(library.recording || !streamer.streaming || library.busy)
+
+                Button("Save cut") { library.saveRecording(name: takeName); takeName = "" }
+                    .buttonStyle(.bordered)
+                    .disabled(!library.recording || library.busy)
+            }
+
+            if !streamer.streaming {
+                Text("Press Start above before recording.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            if library.cuts.isEmpty {
+                Text("No cuts yet. Record one.")
+                    .font(.caption).foregroundStyle(.secondary).padding(.top, 4)
+            } else {
+                ForEach(library.cuts) { cut in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(cut.name).font(.body.weight(.medium))
+                            Text("\(String(format: "%.1f", cut.duration_s))s · \(cut.n_samples) samples")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Replay") { library.replay(cut) }
+                            .buttonStyle(.bordered).font(.caption)
+                            .disabled(library.busy)
+                    }
+                    .padding(.vertical, 6)
+                    Divider()
+                }
+                Button("Stop replay") { library.stopReplay() }
+                    .font(.caption).disabled(library.busy)
+            }
+        }
+    }
+}
+
+// MARK: - Main screen
+
+struct ContentView: View {
+    @StateObject private var streamer = PoseStreamer()
+    @StateObject private var library = Library()
+    @AppStorage("host") private var host = "172.20.10.2"
+    @AppStorage("port") private var portText = "8463"
+    @AppStorage("handle") private var savedHandle = ""
+    @AppStorage("userId") private var savedUserId = ""
+
+    var body: some View {
+        Group {
+            if library.signedIn {
+                controls
+            } else {
+                SignInView(library: library, host: $host)
+            }
+        }
+        .onAppear {
+            streamer.startSession()
+            library.host = host
+            library.httpPort = (UInt16(portText) ?? 8463) &+ 1
+            if !savedUserId.isEmpty {          // stay signed in across launches
+                library.userId = savedUserId
+                library.handle = savedHandle
+                library.refresh()
+            }
+        }
+        // single-parameter form: the two-parameter onChange is iOS 17+
+        .onChange(of: library.userId) { id in
+            savedUserId = id
+            savedHandle = library.handle
+        }
+    }
+
+    private var controls: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("FADE NINJA").font(.headline.bold())
+                        Text("@\(library.handle)").font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Sign out") {
+                        library.signOut(); savedUserId = ""; savedHandle = ""
+                    }.font(.caption)
+                }
+
+                Text(streamer.status).font(.caption).foregroundStyle(.secondary)
+                Text("tracking: \(streamer.trackingLabel)")
+                    .font(.caption)
+                    .foregroundStyle(streamer.trackingNormal ? .green : .orange)
+
+                HStack {
+                    TextField("host", text: $host)
+                        .textFieldStyle(.roundedBorder)
+                        .autocapitalization(.none)
+                    TextField("port", text: $portText)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                }
+
+                Button("Connect UDP") {
+                    library.host = host
+                    library.httpPort = (UInt16(portText) ?? 8463) &+ 1
+                    streamer.connect(host: host, port: UInt16(portText) ?? 8463)
+                }
+
+                Text(streamer.tiltOnly ? "POSITION LOCKED — tilt only"
+                                       : "HOLD TO LOCK POSITION")
+                    .font(.system(size: 15, weight: .bold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 22)
+                    .background(streamer.tiltOnly ? Color.orange.opacity(0.85)
+                                                  : Color.gray.opacity(0.22))
+                    .foregroundColor(streamer.tiltOnly ? .black : .primary)
+                    .cornerRadius(14)
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { _ in if streamer.streaming { streamer.tiltOnly = true } }
+                            .onEnded { _ in streamer.tiltOnly = false }
+                    )
+                    .opacity(streamer.streaming ? 1 : 0.45)
+
+                Button(streamer.streaming ? "Stop" : "Start") {
+                    if streamer.streaming { streamer.stopStreaming() }
+                    else { streamer.startStreaming() }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(streamer.streaming ? .red : .green)
+                .disabled(!streamer.streaming && !streamer.trackingNormal)
+
+                Divider()
+                LibraryView(library: library, streamer: streamer)
+
+                if !library.note.isEmpty {
+                    Text(library.note).font(.caption).foregroundStyle(.orange)
+                        .multilineTextAlignment(.center)
+                }
+                Text("Camera is used only for ARKit tracking. Frames are never sent.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding()
+        }
     }
 }
