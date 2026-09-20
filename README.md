@@ -265,6 +265,35 @@ linkage from the joint angles, with per-joint bars, tip coordinates, a tip
 trail, a reachable-workspace shell (press W) and a reachability warning when
 the phone asks for a point the arm cannot hit.
 
+### Cut library: sign in, record, replay (`store.py`, `take.py`, dashboard)
+
+```
+uv run python pose_server.py       # then open http://127.0.0.1:8464/dashboard
+```
+
+Sign in with a handle (no password — it identifies whose cuts are whose,
+nothing more), press record while driving the arm from the phone, name the
+take, and it lands in your library. Press Replay and the arm re-runs that cut
+on its own clock, so a saved cut plays back with no phone connected.
+
+What gets recorded is the joint angles the ARM was commanded, never the
+phone's pose — the rule from section 3, carried onto the 4-axis machine.
+Before replaying, a take is smoothed, snapped and validated against the joint
+limits, and an out-of-range sample is REFUSED rather than clipped. The raw
+take is checked first on purpose: teleop already clamps, so an out-of-range
+raw sample means corrupt data, and smoothing would quietly pull it back into
+range and run it.
+
+Storage is SQLite by default. Set `DATABASE_URL` to a Postgres/TimescaleDB
+instance (`uv sync --extra db`) and the 50 Hz telemetry table becomes a
+hypertable with time-bucketed reads for charting; everything above it is
+unchanged.
+
+`--trace` sends control-loop timing to Sentry (`uv sync --extra trace`,
+`SENTRY_DSN` set): spans around servo writes and a breadcrumb when the phone
+link goes stale. Without a DSN every tracing helper is a no-op, so the robot
+gains no hard dependency on it.
+
 ### Hardware path (Pi 4 + Arduino)
 
 The Pi runs this Python stack unchanged; the Arduino

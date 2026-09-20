@@ -10,7 +10,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-hw = ["pyserial>=3.5"]  # only needed on the Pi, to talk to the Arduino
+hw = ["pyserial>=3.5"]        # only on the Pi, to talk to the Arduino
+db = ["psycopg[binary]>=3.1"] # TimescaleDB/Postgres for the cut library
+trace = ["sentry-sdk>=2.0"]   # control-loop tracing
 
 [dependency-groups]
 dev = ["pytest>=8"]
