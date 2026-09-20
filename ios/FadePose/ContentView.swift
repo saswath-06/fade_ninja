@@ -340,124 +340,483 @@ struct AnyCodableStub: Decodable {
     init(from decoder: Decoder) throws { _ = try? decoder.singleValueContainer() }
 }
 
+// MARK: - Look
+
+/// One place for the palette so every screen agrees: a dark shop interior,
+/// barber red for anything that acts, steel blue for anything that measures.
+enum Ink {
+    static let bg        = Color(red: 0.055, green: 0.060, blue: 0.075)
+    static let bgLift    = Color(red: 0.094, green: 0.102, blue: 0.125)
+    static let card      = Color(red: 0.118, green: 0.129, blue: 0.157)
+    static let stroke    = Color.white.opacity(0.08)
+    static let text      = Color(red: 0.960, green: 0.945, blue: 0.918)
+    static let dim       = Color(red: 0.569, green: 0.596, blue: 0.639)
+    static let red       = Color(red: 0.902, green: 0.239, blue: 0.298)
+    static let blue      = Color(red: 0.290, green: 0.620, blue: 1.000)
+    static let green     = Color(red: 0.247, green: 0.784, blue: 0.443)
+    static let amber     = Color(red: 0.965, green: 0.694, blue: 0.180)
+
+    static var backdrop: some View {
+        LinearGradient(colors: [bgLift, bg], startPoint: .top, endPoint: .bottom)
+            .ignoresSafeArea()
+    }
+}
+
+private func tap(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .medium) {
+    UIImpactFeedbackGenerator(style: style).impactOccurred()
+}
+
+/// A card. Everything that groups content uses this, so the app has one
+/// surface treatment rather than five.
+struct Panel<Content: View>: View {
+    var title: String? = nil
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let title {
+                Text(title.uppercased())
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .tracking(1.4)
+                    .foregroundStyle(Ink.dim)
+            }
+            content
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Ink.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .stroke(Ink.stroke, lineWidth: 1))
+    }
+}
+
+struct StatusDot: View {
+    let label: String
+    let on: Bool
+    var color: Color = Ink.green
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(on ? color : Ink.dim.opacity(0.45))
+                .frame(width: 7, height: 7)
+                .shadow(color: on ? color.opacity(0.8) : .clear, radius: 4)
+            Text(label)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(on ? Ink.text : Ink.dim)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(Capsule().fill(Color.white.opacity(0.05)))
+    }
+}
+
 // MARK: - Sign in
 
 struct SignInView: View {
     @ObservedObject var library: Library
     @Binding var host: String
     @State private var handle = ""
+    @FocusState private var focused: Bool
 
     var body: some View {
-        VStack(spacing: 22) {
-            Spacer()
-            Text("FADE NINJA").font(.system(size: 34, weight: .heavy))
-            Text("your cuts, saved and replayable")
-                .font(.subheadline).foregroundStyle(.secondary)
+        ZStack {
+            Ink.backdrop
+            ScrollView {
+                VStack(spacing: 26) {
+                    Spacer(minLength: 50)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("ROBOT ADDRESS").font(.caption2.bold())
-                    .foregroundStyle(.secondary)
-                TextField("host", text: $host)
-                    .textFieldStyle(.roundedBorder)
-                    .autocapitalization(.none)
-                    .keyboardType(.decimalPad)
+                    ZStack {
+                        Circle()
+                            .fill(RadialGradient(colors: [Ink.red.opacity(0.35), .clear],
+                                                 center: .center, startRadius: 4, endRadius: 96))
+                            .frame(width: 190, height: 190)
+                        Image(systemName: "scissors")
+                            .font(.system(size: 62, weight: .semibold))
+                            .foregroundStyle(Ink.red)
+                            .rotationEffect(.degrees(-20))
+                    }
+
+                    VStack(spacing: 7) {
+                        Text("FADE NINJA")
+                            .font(.system(size: 36, weight: .heavy, design: .rounded))
+                            .tracking(1.5)
+                            .foregroundStyle(Ink.text)
+                        Text("the cut you can't reach")
+                            .font(.system(size: 15, weight: .medium, design: .rounded))
+                            .foregroundStyle(Ink.dim)
+                    }
+
+                    VStack(spacing: 14) {
+                        field("Robot address", text: $host, icon: "wifi",
+                              keyboard: .decimalPad)
+                        field("Your handle", text: $handle, icon: "person.fill")
+                            .focused($focused)
+                    }
+
+                    Button {
+                        tap()
+                        library.host = host
+                        library.signIn(handle: handle)
+                    } label: {
+                        HStack(spacing: 8) {
+                            if library.busy { ProgressView().tint(.white) }
+                            Text(library.busy ? "Signing in" : "Enter the shop")
+                                .font(.system(size: 17, weight: .bold, design: .rounded))
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 16)
+                        .background(
+                            LinearGradient(colors: [Ink.red, Ink.red.opacity(0.75)],
+                                           startPoint: .top, endPoint: .bottom),
+                            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .foregroundStyle(.white)
+                        .shadow(color: Ink.red.opacity(0.4), radius: 14, y: 6)
+                    }
+                    .disabled(handle.trimmingCharacters(in: .whitespaces).count < 2
+                              || library.busy)
+                    .opacity(handle.trimmingCharacters(in: .whitespaces).count < 2 ? 0.45 : 1)
+
+                    Text("Just a handle — no password. It only decides whose cuts are whose.")
+                        .font(.system(size: 12, design: .rounded))
+                        .foregroundStyle(Ink.dim)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 20)
+
+                    if !library.note.isEmpty {
+                        Text(library.note)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(Ink.amber)
+                            .multilineTextAlignment(.center)
+                    }
+                    Spacer(minLength: 30)
+                }
+                .padding(.horizontal, 24)
             }
+        }
+        .onTapGesture { focused = false }
+    }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("YOUR HANDLE").font(.caption2.bold())
-                    .foregroundStyle(.secondary)
-                TextField("e.g. saswath", text: $handle)
-                    .textFieldStyle(.roundedBorder)
+    private func field(_ label: String, text: Binding<String>, icon: String,
+                       keyboard: UIKeyboardType = .default) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 15))
+                .foregroundStyle(Ink.dim)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label.uppercased())
+                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                    .tracking(1.2)
+                    .foregroundStyle(Ink.dim)
+                TextField("", text: text)
+                    .font(.system(size: 17, weight: .medium, design: .rounded))
+                    .foregroundStyle(Ink.text)
                     .autocapitalization(.none)
                     .autocorrectionDisabled()
+                    .keyboardType(keyboard)
             }
-
-            Button {
-                library.host = host
-                library.signIn(handle: handle)
-            } label: {
-                Text(library.busy ? "Signing in…" : "Sign in")
-                    .frame(maxWidth: .infinity).padding(.vertical, 6)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(handle.trimmingCharacters(in: .whitespaces).count < 2 || library.busy)
-
-            Text("A handle is all we store — no password. It only decides whose cuts are whose.")
-                .font(.caption).foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-
-            if !library.note.isEmpty {
-                Text(library.note).font(.caption).foregroundStyle(.orange)
-                    .multilineTextAlignment(.center)
-            }
-            Spacer()
         }
-        .padding(24)
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .background(Ink.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .stroke(Ink.stroke, lineWidth: 1))
     }
 }
 
-// MARK: - Cut library
+// MARK: - Remote
 
-struct LibraryView: View {
-    @ObservedObject var library: Library
+struct RemoteView: View {
     @ObservedObject var streamer: PoseStreamer
+    @ObservedObject var library: Library
+    @Binding var host: String
+    @Binding var portText: String
     @State private var takeName = ""
+    @State private var elapsed = 0
+    private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    private var canDrive: Bool { streamer.streaming }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("MY CUTS").font(.caption.bold()).foregroundStyle(.secondary)
+        ScrollView {
+            VStack(spacing: 16) {
+                connection
+                driveButton
+                lockButton
+                recording
+                if !library.note.isEmpty {
+                    Text(library.note)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(Ink.amber)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 8)
+                }
+                Text("The camera is used only to track where the phone is. Frames never leave the device.")
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(Ink.dim.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 16).padding(.top, 4)
+            }
+            .padding(16)
+        }
+        .onReceive(tick) { _ in if library.recording { elapsed += 1 } }
+        .onChange(of: library.recording) { rec in if rec { elapsed = 0 } }
+    }
+
+    // ---- connection
+    private var connection: some View {
+        Panel(title: "Connection") {
+            HStack(spacing: 8) {
+                StatusDot(label: "LINKED", on: streamer.streaming, color: Ink.green)
+                StatusDot(label: streamer.trackingNormal ? "TRACKING" : "WARMING UP",
+                          on: streamer.trackingNormal, color: Ink.blue)
                 Spacer()
-                Button("Refresh") { library.refresh() }.font(.caption)
+            }
+            HStack(spacing: 10) {
+                TextField("host", text: $host)
+                    .font(.system(size: 15, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Ink.text)
+                    .autocapitalization(.none)
+                    .keyboardType(.decimalPad)
+                TextField("port", text: $portText)
+                    .font(.system(size: 15, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Ink.text)
+                    .keyboardType(.numberPad)
+                    .frame(width: 66)
+                Button {
+                    tap(.light)
+                    library.host = host
+                    library.httpPort = (UInt16(portText) ?? 8463) &+ 1
+                    streamer.connect(host: host, port: UInt16(portText) ?? 8463)
+                } label: {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Ink.blue)
+                        .padding(9)
+                        .background(Ink.blue.opacity(0.15), in: Circle())
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(Ink.bg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            Text(streamer.status)
+                .font(.system(size: 11, design: .rounded))
+                .foregroundStyle(Ink.dim)
+        }
+    }
+
+    // ---- the primary action
+    private var driveButton: some View {
+        Button {
+            tap(.heavy)
+            if streamer.streaming { streamer.stopStreaming() }
+            else { streamer.startStreaming() }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: streamer.streaming ? "stop.fill" : "play.fill")
+                    .font(.system(size: 20, weight: .bold))
+                Text(streamer.streaming ? "Stop driving" : "Start driving")
+                    .font(.system(size: 19, weight: .bold, design: .rounded))
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 20)
+            .background(
+                LinearGradient(colors: streamer.streaming
+                               ? [Ink.red, Ink.red.opacity(0.72)]
+                               : [Ink.green, Ink.green.opacity(0.72)],
+                               startPoint: .top, endPoint: .bottom),
+                in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .foregroundStyle(.white)
+            .shadow(color: (streamer.streaming ? Ink.red : Ink.green).opacity(0.35),
+                    radius: 16, y: 7)
+        }
+        .disabled(!streamer.streaming && !streamer.trackingNormal)
+        .opacity(!streamer.streaming && !streamer.trackingNormal ? 0.4 : 1)
+    }
+
+    // ---- hold to lock
+    private var lockButton: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(streamer.tiltOnly ? Ink.amber : Ink.card)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(streamer.tiltOnly ? Ink.amber : Ink.stroke, lineWidth: 1)
+                VStack(spacing: 7) {
+                    Image(systemName: streamer.tiltOnly ? "lock.fill" : "lock.open")
+                        .font(.system(size: 26, weight: .semibold))
+                    Text(streamer.tiltOnly ? "POSITION LOCKED" : "HOLD TO LOCK POSITION")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .tracking(0.6)
+                }
+                .foregroundStyle(streamer.tiltOnly ? Color.black : Ink.text)
+            }
+            .frame(height: 118)
+            .scaleEffect(streamer.tiltOnly ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.12), value: streamer.tiltOnly)
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    if canDrive && !streamer.tiltOnly { tap(.rigid); streamer.tiltOnly = true }
+                }
+                .onEnded { _ in streamer.tiltOnly = false })
+            .opacity(canDrive ? 1 : 0.4)
+
+            Text("Parks the arm so you can reposition your hand — only the blade angle keeps moving.")
+                .font(.system(size: 11, design: .rounded))
+                .foregroundStyle(Ink.dim)
+                .multilineTextAlignment(.center)
+        }
+    }
+
+    // ---- recording
+    private var recording: some View {
+        Panel(title: "Record a cut") {
+            if library.recording {
+                HStack(spacing: 10) {
+                    Circle().fill(Ink.red).frame(width: 11, height: 11)
+                        .opacity(elapsed % 2 == 0 ? 1 : 0.28)
+                        .animation(.easeInOut(duration: 0.5), value: elapsed)
+                    Text(String(format: "%01d:%02d", elapsed / 60, elapsed % 60))
+                        .font(.system(size: 30, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Ink.text)
+                    Spacer()
+                    Text("REC").font(.system(size: 12, weight: .heavy, design: .rounded))
+                        .foregroundStyle(Ink.red)
+                }
             }
 
-            TextField("name this cut", text: $takeName)
-                .textFieldStyle(.roundedBorder)
+            TextField("", text: $takeName, prompt: Text("Name this cut")
+                .foregroundColor(Ink.dim))
+                .font(.system(size: 16, weight: .medium, design: .rounded))
+                .foregroundStyle(Ink.text)
+                .padding(.horizontal, 14).padding(.vertical, 12)
+                .background(Ink.bg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             HStack(spacing: 10) {
-                Button(library.recording ? "Recording…" : "Start recording") {
-                    library.startRecording()
+                Button {
+                    tap(); library.startRecording()
+                } label: {
+                    Label("Record", systemImage: "record.circle")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .frame(maxWidth: .infinity).padding(.vertical, 14)
+                        .background(Ink.red.opacity(library.recording ? 0.25 : 1),
+                                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .foregroundStyle(library.recording ? Ink.dim : .white)
                 }
-                .buttonStyle(.borderedProminent).tint(.red)
-                .disabled(library.recording || !streamer.streaming || library.busy)
+                .disabled(library.recording || !canDrive || library.busy)
 
-                Button("Save cut") { library.saveRecording(name: takeName); takeName = "" }
-                    .buttonStyle(.bordered)
-                    .disabled(!library.recording || library.busy)
+                Button {
+                    tap(); library.saveRecording(name: takeName); takeName = ""
+                } label: {
+                    Label("Save", systemImage: "square.and.arrow.down")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .frame(maxWidth: .infinity).padding(.vertical, 14)
+                        .background(library.recording ? Ink.blue : Ink.card,
+                                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .foregroundStyle(library.recording ? .white : Ink.dim)
+                }
+                .disabled(!library.recording || library.busy)
             }
 
-            if !streamer.streaming {
-                Text("Press Start above before recording.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
-            if library.cuts.isEmpty {
-                Text("No cuts yet. Record one.")
-                    .font(.caption).foregroundStyle(.secondary).padding(.top, 4)
-            } else {
-                ForEach(library.cuts) { cut in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(cut.name).font(.body.weight(.medium))
-                            Text("\(String(format: "%.1f", cut.duration_s))s · \(cut.n_samples) samples")
-                                .font(.caption2).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button("Replay") { library.replay(cut) }
-                            .buttonStyle(.bordered).font(.caption)
-                            .disabled(library.busy)
-                    }
-                    .padding(.vertical, 6)
-                    Divider()
-                }
-                Button("Stop replay") { library.stopReplay() }
-                    .font(.caption).disabled(library.busy)
+            if !canDrive {
+                Text("Press Start driving first.")
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(Ink.dim)
             }
         }
     }
 }
 
-// MARK: - Main screen
+// MARK: - Replay
+
+struct ReplayView: View {
+    @ObservedObject var library: Library
+    @State private var playingId: String? = nil
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                if library.cuts.isEmpty {
+                    empty
+                } else {
+                    ForEach(library.cuts) { cut in card(cut) }
+                    Button {
+                        tap(.light); playingId = nil; library.stopReplay()
+                    } label: {
+                        Label("Stop replay", systemImage: "stop.circle")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .frame(maxWidth: .infinity).padding(.vertical, 14)
+                            .background(Ink.card, in: RoundedRectangle(cornerRadius: 14,
+                                                                       style: .continuous))
+                            .foregroundStyle(Ink.text)
+                    }
+                    .disabled(library.busy)
+                }
+            }
+            .padding(16)
+        }
+        .refreshable { library.refresh() }
+    }
+
+    private var empty: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "waveform.path")
+                .font(.system(size: 46, weight: .light))
+                .foregroundStyle(Ink.dim.opacity(0.6))
+            Text("No cuts yet")
+                .font(.system(size: 19, weight: .bold, design: .rounded))
+                .foregroundStyle(Ink.text)
+            Text("Record one on the Remote tab and it shows up here, ready to run again.")
+                .font(.system(size: 13, design: .rounded))
+                .foregroundStyle(Ink.dim)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 30)
+        }
+        .padding(.vertical, 70)
+    }
+
+    private func card(_ cut: Cut) -> some View {
+        let playing = playingId == cut.id
+        return HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(playing ? Ink.blue.opacity(0.22) : Color.white.opacity(0.05))
+                Image(systemName: playing ? "waveform" : "scissors")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(playing ? Ink.blue : Ink.dim)
+            }
+            .frame(width: 50, height: 50)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(cut.name)
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Ink.text)
+                    .lineLimit(1)
+                Text(String(format: "%.1fs · %d samples", cut.duration_s, cut.n_samples))
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Ink.dim)
+            }
+            Spacer(minLength: 6)
+
+            Button {
+                tap(); playingId = cut.id; library.replay(cut)
+            } label: {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 42, height: 42)
+                    .background(
+                        LinearGradient(colors: [Ink.blue, Ink.blue.opacity(0.7)],
+                                       startPoint: .top, endPoint: .bottom),
+                        in: Circle())
+                    .shadow(color: Ink.blue.opacity(0.4), radius: 8, y: 3)
+            }
+            .disabled(library.busy)
+        }
+        .padding(14)
+        .background(Ink.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .stroke(playing ? Ink.blue.opacity(0.55) : Ink.stroke, lineWidth: 1))
+    }
+}
+
+// MARK: - Shell
 
 struct ContentView: View {
     @StateObject private var streamer = PoseStreamer()
@@ -466,20 +825,20 @@ struct ContentView: View {
     @AppStorage("port") private var portText = "8463"
     @AppStorage("handle") private var savedHandle = ""
     @AppStorage("userId") private var savedUserId = ""
+    @State private var tab = 0
 
     var body: some View {
         Group {
-            if library.signedIn {
-                controls
-            } else {
+            if library.signedIn { shell } else {
                 SignInView(library: library, host: $host)
             }
         }
+        .preferredColorScheme(.dark)
         .onAppear {
             streamer.startSession()
             library.host = host
             library.httpPort = (UInt16(portText) ?? 8463) &+ 1
-            if !savedUserId.isEmpty {          // stay signed in across launches
+            if !savedUserId.isEmpty {
                 library.userId = savedUserId
                 library.handle = savedHandle
                 library.refresh()
@@ -492,77 +851,52 @@ struct ContentView: View {
         }
     }
 
-    private var controls: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("FADE NINJA").font(.headline.bold())
-                        Text("@\(library.handle)").font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Sign out") {
-                        library.signOut(); savedUserId = ""; savedHandle = ""
-                    }.font(.caption)
+    private var shell: some View {
+        ZStack {
+            Ink.backdrop
+            VStack(spacing: 0) {
+                header
+                TabView(selection: $tab) {
+                    RemoteView(streamer: streamer, library: library,
+                               host: $host, portText: $portText)
+                        .tabItem { Label("Remote", systemImage: "dot.radiowaves.left.and.right") }
+                        .tag(0)
+                    ReplayView(library: library)
+                        .tabItem { Label("My cuts", systemImage: "list.bullet.rectangle") }
+                        .tag(1)
                 }
-
-                Text(streamer.status).font(.caption).foregroundStyle(.secondary)
-                Text("tracking: \(streamer.trackingLabel)")
-                    .font(.caption)
-                    .foregroundStyle(streamer.trackingNormal ? .green : .orange)
-
-                HStack {
-                    TextField("host", text: $host)
-                        .textFieldStyle(.roundedBorder)
-                        .autocapitalization(.none)
-                    TextField("port", text: $portText)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 80)
-                }
-
-                Button("Connect UDP") {
-                    library.host = host
-                    library.httpPort = (UInt16(portText) ?? 8463) &+ 1
-                    streamer.connect(host: host, port: UInt16(portText) ?? 8463)
-                }
-
-                Text(streamer.tiltOnly ? "POSITION LOCKED — tilt only"
-                                       : "HOLD TO LOCK POSITION")
-                    .font(.system(size: 15, weight: .bold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 22)
-                    .background(streamer.tiltOnly ? Color.orange.opacity(0.85)
-                                                  : Color.gray.opacity(0.22))
-                    .foregroundColor(streamer.tiltOnly ? .black : .primary)
-                    .cornerRadius(14)
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { _ in if streamer.streaming { streamer.tiltOnly = true } }
-                            .onEnded { _ in streamer.tiltOnly = false }
-                    )
-                    .opacity(streamer.streaming ? 1 : 0.45)
-
-                Button(streamer.streaming ? "Stop" : "Start") {
-                    if streamer.streaming { streamer.stopStreaming() }
-                    else { streamer.startStreaming() }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(streamer.streaming ? .red : .green)
-                .disabled(!streamer.streaming && !streamer.trackingNormal)
-
-                Divider()
-                LibraryView(library: library, streamer: streamer)
-
-                if !library.note.isEmpty {
-                    Text(library.note).font(.caption).foregroundStyle(.orange)
-                        .multilineTextAlignment(.center)
-                }
-                Text("Camera is used only for ARKit tracking. Frames are never sent.")
-                    .font(.caption2).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                .tint(Ink.red)
             }
-            .padding()
         }
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "scissors")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Ink.red)
+                .rotationEffect(.degrees(-20))
+            VStack(alignment: .leading, spacing: 1) {
+                Text("FADE NINJA")
+                    .font(.system(size: 15, weight: .heavy, design: .rounded))
+                    .tracking(1.1)
+                    .foregroundStyle(Ink.text)
+                Text("@\(library.handle)")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(Ink.dim)
+            }
+            Spacer()
+            Menu {
+                Button("Refresh cuts") { library.refresh() }
+                Button("Sign out", role: .destructive) {
+                    library.signOut(); savedUserId = ""; savedHandle = ""
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 19))
+                    .foregroundStyle(Ink.dim)
+            }
+        }
+        .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 12)
     }
 }
