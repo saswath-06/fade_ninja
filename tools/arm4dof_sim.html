@@ -51,6 +51,13 @@
          border:1px solid currentColor; }
   #err { position:fixed; inset:0; display:none; place-items:center; text-align:center;
          padding:30px; color:var(--muted); }
+  #nosig { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+           display:none; text-align:center; padding:18px 26px; border-radius:12px;
+           background:rgba(22,27,34,0.94); border:1px solid var(--warn);
+           pointer-events:none; }
+  #nosig b { display:block; color:var(--warn); font:700 15px ui-sans-serif,system-ui;
+             letter-spacing:.06em; margin-bottom:6px; }
+  #nosig span { color:var(--muted); font-size:12px; line-height:1.6; }
 </style>
 </head>
 <body>
@@ -87,6 +94,12 @@ Three.js could not be fetched — check the network, then reload.</div></div>
   <div class="kv"><span>right</span><span id="prt">0</span></div>
   <div class="kv"><span>forward</span><span id="pfw">0</span></div>
   <div class="kv" style="margin-top:10px"><span>in range</span><span id="reach">—</span></div>
+</div>
+
+<div id="nosig">
+  <b>NO SIGNAL</b>
+  <span>The arm is holding its last pose — the phone has stopped sending.<br/>
+  Check the Mac and phone are on the same network, then Stop &amp; Start in FadePose.</span>
 </div>
 
 <div class="hud" id="foot">
@@ -338,6 +351,8 @@ Three.js could not be fetched — check the network, then reload.</div></div>
     mLink.color.setHex(bad ? 0x7a5250 : 0x5b6675);
     if (trailOn && st.started && !st.stale) pushTrail(tip);
 
+    // a stale link looks identical to a frozen page, so say which it is
+    $("nosig").style.display = st.stale ? "block" : "none";
     pill($("pStart"), st.started);
     pill($("pLink"), !st.stale, st.stale ? "warn" : null);
     pill($("pReach"), st.reachable, st.reachable ? null : "bad");

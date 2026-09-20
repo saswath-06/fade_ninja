@@ -133,9 +133,18 @@ final class PoseStreamer: NSObject, ObservableObject, ARSessionDelegate {
         let y = dw.y
         let z = -dw.x * sa + dw.z * ca
 
-        // orientation stays relative to Start, so tilt re-zeros when you
-        // press Start and the cut angle is measured from however you hold it
-        let q = simd_quatf(rel)
+        // The cut angle must be gravity-referenced too. simd_quatf(rel)
+        // measures rotation in the origin CAMERA's frame, so with the phone
+        // tilted — a normal clipper grip — turning it horizontally leaks into
+        // pitch: at a 40 deg grip a 90 deg turn swings the cut angle 30 deg,
+        // most of its range. Send the elevation of the phone's forward axis
+        // as a pure pitch rotation instead; yaw about gravity cannot change
+        // it. The server still differences this against Start, so tilt
+        // re-zeros there, and pure pitch rotations difference cleanly.
+        let fwdNow = SIMD3<Float>(-t.columns.2.x, -t.columns.2.y, -t.columns.2.z)
+        let elevation = asinf(max(-1.0, min(1.0, fwdNow.y)))
+        let q = simd_quatf(angle: elevation, axis: SIMD3<Float>(1, 0, 0))
+        _ = rel
         let tMs = Int(frame.timestamp * 1000) % 1_000_000_000
         let line = String(
             format: "POSE %d %.5f %.5f %.5f %.5f %.5f %.5f %.5f %d",

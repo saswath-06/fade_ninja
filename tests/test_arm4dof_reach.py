@@ -255,3 +255,62 @@ def test_operator_axes_map_to_one_arm_axis_each(name, Ro):
         for i in range(3):
             if i != dominant:
                 assert abs(got[i]) < 1e-5, f"{name}: {move} bled into {'xyz'[i]}"
+
+
+# ------------------------------------------------------------- cut angle
+
+def _quat_from_R(R):
+    w = math.sqrt(max(1e-12, 1 + R[0][0] + R[1][1] + R[2][2])) / 2
+    return (w, (R[2][1]-R[1][2])/(4*w), (R[0][2]-R[2][0])/(4*w),
+            (R[1][0]-R[0][1])/(4*w))
+
+
+def _elevation_quat(R):
+    """Mirrors the Swift: cut angle as a pure pitch rotation by the elevation
+    of the phone's forward axis, which gravity fixes."""
+    fy = -R[1][2]
+    e = math.asin(max(-1.0, min(1.0, fy)))
+    return (math.cos(e / 2), math.sin(e / 2), 0.0, 0.0)
+
+
+def _rel_quat(q_origin, q_now):
+    w0, x0, y0, z0 = q_origin
+    w1, x1, y1, z1 = q_now
+    cw, cx, cy, cz = w0, -x0, -y0, -z0          # conjugate
+    return (cw*w1 - cx*x1 - cy*y1 - cz*z1,
+            cw*x1 + cx*w1 + cy*z1 - cz*y1,
+            cw*y1 - cx*z1 + cy*w1 + cz*x1,
+            cw*z1 + cx*y1 - cy*x1 + cz*w1)
+
+
+@pytest.mark.parametrize("grip", [0, -20, -40, -60, -80])
+@pytest.mark.parametrize("yaw", [30, 60, 90, 120])
+def test_turning_the_phone_horizontally_does_not_tilt_the_clipper(grip, yaw):
+    """Reported bug: rotating the phone horizontally rotated the clipper
+    vertically. Sending the origin-camera-relative quaternion leaked yaw into
+    pitch whenever the phone was tilted — at a 40 deg grip, a 90 deg turn
+    moved the cut angle 30 deg."""
+    from fadegpt.pose_protocol import pitch_deg_from_quat
+    Ro = _rot_x(grip)
+    Rc = _mul(_rot_y(yaw), Ro)                  # spin it about gravity
+    rel = _rel_quat(_elevation_quat(Ro), _elevation_quat(Rc))
+    assert pitch_deg_from_quat(*rel) == pytest.approx(0.0, abs=1e-6)
+
+
+@pytest.mark.parametrize("grip", [0, -40, -80])
+def test_a_real_wrist_tilt_still_reads_through(grip):
+    from fadegpt.pose_protocol import pitch_deg_from_quat
+    Ro = _rot_x(grip)
+    Rc = _mul(Ro, _rot_x(25))                   # nose up 25 in the hand
+    rel = _rel_quat(_elevation_quat(Ro), _elevation_quat(Rc))
+    assert pitch_deg_from_quat(*rel) == pytest.approx(25.0, abs=1e-6)
+
+
+def test_the_old_relative_quaternion_would_have_leaked():
+    """Pins that the bug was real, so the fix cannot be quietly reverted."""
+    from fadegpt.pose_protocol import pitch_deg_from_quat
+    Ro = _rot_x(-40)
+    Rc = _mul(_rot_y(90), Ro)
+    RoT = [[Ro[j][i] for j in range(3)] for i in range(3)]
+    leaked = pitch_deg_from_quat(*_quat_from_R(_mul(RoT, Rc)))
+    assert abs(leaked) > 20.0, "the old path should show a large false tilt"
