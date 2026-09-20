@@ -27,7 +27,7 @@ DEFAULT_PORT = 8463
 WATCHDOG_S = 0.25
 WATCHDOG_HZ = 20.0
 SIM_HTTP_PORT = 8464
-SIM_PAGE = Path(__file__).parent / "tools" / "eezy_sim.html"
+SIM_PAGE = Path(__file__).parent / "tools" / "arm4dof_sim.html"
 
 
 class PoseServer:
@@ -180,7 +180,10 @@ def _ws_send_text(conn: socket.socket, text: str) -> None:
 
 def serve_sim(server: PoseServer, http_port: int = SIM_HTTP_PORT,
               host: str = "0.0.0.0") -> ThreadingHTTPServer:
-    page = SIM_PAGE.read_text() if SIM_PAGE.exists() else "<h1>missing eezy_sim.html</h1>"
+    def page_text() -> str:
+        # read per request so editing the viewer only needs a browser refresh
+        return (SIM_PAGE.read_text() if SIM_PAGE.exists()
+                else "<h1>missing tools/arm4dof_sim.html</h1>")
     pose_ref = server
 
     class Handler(BaseHTTPRequestHandler):
@@ -213,7 +216,7 @@ def serve_sim(server: PoseServer, http_port: int = SIM_HTTP_PORT,
                     pass
                 return  # never fall through to HTTP page write
 
-            body = page.encode()
+            body = page_text().encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))

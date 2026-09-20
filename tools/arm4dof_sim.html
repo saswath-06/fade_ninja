@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>4DOF Arm — pose teleop</title>
+<style>
+  :root {
+    --bg:#0e1116; --panel:#161b22; --line:#262d36; --ink:#e6edf3;
+    --muted:#8b949e; --ok:#3fb950; --warn:#d29922; --bad:#f85149;
+    --q1:#58a6ff; --q2:#bc8cff; --q3:#3fb0a0; --q4:#f0883e;
+  }
+  * { box-sizing:border-box; }
+  html,body { height:100%; margin:0; }
+  body { background:var(--bg); color:var(--ink); overflow:hidden;
+         font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  #gl { position:fixed; top:0; left:0; display:block; }
+  .hud { position:fixed; background:rgba(22,27,34,0.92); border:1px solid var(--line);
+         border-radius:10px; padding:12px 14px; backdrop-filter:blur(6px); }
+  #left { top:14px; left:14px; min-width:262px; }
+  #right { top:14px; right:14px; min-width:196px; }
+  #foot { left:14px; bottom:14px; right:14px; display:flex; gap:20px; flex-wrap:wrap;
+          align-items:center; }
+  h1 { font:700 14px/1 ui-sans-serif,system-ui,sans-serif; margin:0 0 2px;
+       letter-spacing:.04em; }
+  .sub { color:var(--muted); font-size:11px; margin-bottom:10px; }
+  .j { margin-bottom:9px; }
+  .j .row { display:flex; justify-content:space-between; align-items:baseline; }
+  .j .nm { font-size:10.5px; letter-spacing:.06em; color:var(--muted); }
+  .j .v { font-size:16px; font-variant-numeric:tabular-nums; }
+  .track { height:5px; background:#0b0e13; border-radius:3px; margin-top:4px;
+           position:relative; overflow:hidden; }
+  .track i { position:absolute; top:0; bottom:0; border-radius:3px; }
+  .a .v,.a i { color:var(--q1); } .a i { background:var(--q1); }
+  .b .v,.b i { color:var(--q2); } .b i { background:var(--q2); }
+  .c .v,.c i { color:var(--q3); } .c i { background:var(--q3); }
+  .d .v,.d i { color:var(--q4); } .d i { background:var(--q4); }
+  .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 10px;
+          border-radius:999px; border:1px solid var(--line); font-size:11px;
+          color:var(--muted); }
+  .pill b { width:8px; height:8px; border-radius:50%; background:var(--muted); }
+  .pill.on { color:var(--ink); } .pill.on b { background:var(--ok); }
+  .pill.warn { color:var(--warn); } .pill.warn b { background:var(--warn); }
+  .pill.bad { color:var(--bad); } .pill.bad b { background:var(--bad); }
+  .kv { display:flex; justify-content:space-between; gap:14px; font-size:11.5px;
+        color:var(--muted); }
+  .kv span:last-child { color:var(--ink); font-variant-numeric:tabular-nums; }
+  .tag { position:fixed; transform:translate(-50%,-50%); pointer-events:none;
+         font-size:10px; font-weight:700; letter-spacing:.09em; white-space:nowrap;
+         padding:3px 7px; border-radius:5px; background:rgba(14,17,22,0.78);
+         border:1px solid currentColor; }
+  #err { position:fixed; inset:0; display:none; place-items:center; text-align:center;
+         padding:30px; color:var(--muted); }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="err"><div><b style="color:var(--ink)">3D failed to load.</b><br/>
+Three.js could not be fetched — check the network, then reload.</div></div>
+
+<div class="hud" id="left">
+  <h1>4DOF ARM</h1>
+  <div class="sub">phone pose &rarr; joint angles</div>
+  <div class="j a"><div class="row"><span class="nm">q1 &mdash; BASE YAW</span>
+    <span><span class="v" id="v1">0.0</span>&deg;</span></div>
+    <div class="track"><i id="b1"></i></div></div>
+  <div class="j b"><div class="row"><span class="nm">q2 &mdash; SHOULDER</span>
+    <span><span class="v" id="v2">0.0</span>&deg;</span></div>
+    <div class="track"><i id="b2"></i></div></div>
+  <div class="j c"><div class="row"><span class="nm">q3 &mdash; ELBOW</span>
+    <span><span class="v" id="v3">0.0</span>&deg;</span></div>
+    <div class="track"><i id="b3"></i></div></div>
+  <div class="j d"><div class="row"><span class="nm">q4 &mdash; WRIST / CUT ANGLE</span>
+    <span><span class="v" id="v4">0.0</span>&deg;</span></div>
+    <div class="track"><i id="b4"></i></div></div>
+</div>
+
+<div class="hud" id="right">
+  <div class="kv"><span>tip x</span><span id="tx">0</span></div>
+  <div class="kv"><span>tip y</span><span id="ty">0</span></div>
+  <div class="kv"><span>tip z</span><span id="tz">0</span></div>
+  <div class="kv" style="margin-top:8px"><span>phone x</span><span id="px">0.000</span></div>
+  <div class="kv"><span>phone y</span><span id="py">0.000</span></div>
+  <div class="kv"><span>phone z</span><span id="pz">0.000</span></div>
+  <div class="kv" style="margin-top:8px"><span>reach</span><span id="reach">—</span></div>
+</div>
+
+<div class="hud" id="foot">
+  <span class="pill" id="pStart"><b></b>STREAMING</span>
+  <span class="pill" id="pLink"><b></b>LINK</span>
+  <span class="pill" id="pReach"><b></b>REACHABLE</span>
+  <span style="color:var(--muted);font-size:11px">drag to orbit &middot; scroll to zoom
+    &middot; T trail &middot; W workspace</span>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+  "use strict";
+  if (typeof THREE === "undefined") {
+    document.getElementById("err").style.display = "grid"; return;
+  }
+  const $ = id => document.getElementById(id);
+  const D2R = Math.PI / 180;
+
+  // link lengths and limits mirror fadegpt/eezy_ik.py (mm)
+  const L0 = 55, L2 = 80, L3 = 80;
+  const LIM = {q1:[-90,90], q2:[0,90], q3:[-135,0], q4:[-45,45]};
+  const S = 0.01;                        // mm -> scene units
+
+  const renderer = new THREE.WebGLRenderer({canvas:$("gl"), antialias:true});
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0e1116);
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 100);
+
+  scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x141820, 0.9));
+  const key = new THREE.DirectionalLight(0xffffff, 0.85); key.position.set(3,5,2);
+  scene.add(key);
+  const rim = new THREE.DirectionalLight(0x6fa8ff, 0.3); rim.position.set(-3,1,-3);
+  scene.add(rim);
+
+  const grid = new THREE.GridHelper(6, 24, 0x2a3340, 0x1b2129);
+  scene.add(grid);
+  scene.add(new THREE.AxesHelper(0.45));
+
+  // ---- materials
+  const mLink = new THREE.MeshStandardMaterial({color:0x5b6675, roughness:0.45, metalness:0.55});
+  const mJoint = new THREE.MeshStandardMaterial({color:0x8b96a6, roughness:0.3, metalness:0.75});
+  const mBase = new THREE.MeshStandardMaterial({color:0x2b333e, roughness:0.7, metalness:0.35});
+  const mTool = new THREE.MeshStandardMaterial({color:0x2f3742, roughness:0.45, metalness:0.4});
+  const mBlade = new THREE.MeshStandardMaterial({color:0xf0883e, roughness:0.25, metalness:0.7});
+
+  // ---- static base
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.42, 0.12, 28), mBase);
+  base.position.y = 0.06; scene.add(base);
+
+  // ---- a link is a cylinder we re-aim each frame between two points
+  function makeLink(radius) {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 1, 14), mLink);
+    scene.add(m); return m;
+  }
+  const upper = makeLink(0.055), fore = makeLink(0.046);
+  const column = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.09, L0*S, 20), mLink);
+  scene.add(column);
+
+  const jShoulder = new THREE.Mesh(new THREE.SphereGeometry(0.085, 20, 16), mJoint);
+  const jElbow = new THREE.Mesh(new THREE.SphereGeometry(0.07, 20, 16), mJoint);
+  scene.add(jShoulder, jElbow);
+
+  // ---- wrist + clipper, a child group so q4 tilts the tool only
+  const wrist = new THREE.Group(); scene.add(wrist);
+  const toolBody = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.11, 0.24), mTool);
+  toolBody.position.x = 0.12; wrist.add(toolBody);
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.26), mBlade);
+  blade.position.x = 0.02; wrist.add(blade);
+  const tcp = new THREE.Mesh(new THREE.SphereGeometry(0.032, 14, 12),
+    new THREE.MeshBasicMaterial({color:0xffa657}));
+  tcp.renderOrder = 3; tcp.material.depthTest = false; wrist.add(tcp);
+
+  const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _m = new THREE.Vector3();
+  const _up = new THREE.Vector3(0,1,0), _dir = new THREE.Vector3();
+  function aim(mesh, a, b) {
+    _a.set(a[0], a[1], a[2]); _b.set(b[0], b[1], b[2]);
+    _m.addVectors(_a, _b).multiplyScalar(0.5);
+    _dir.subVectors(_b, _a);
+    const len = _dir.length() || 1e-6;
+    mesh.position.copy(_m);
+    mesh.scale.set(1, len, 1);
+    mesh.quaternion.setFromUnitVectors(_up, _dir.normalize());
+  }
+
+  // ---- forward kinematics, mirroring eezy_ik.py.
+  // that module has Z up; here Y is up, so (x,y,z)_arm -> (x, z, -y)_scene
+  function fk(q1, q2, q3) {
+    const c1 = Math.cos(q1*D2R), s1 = Math.sin(q1*D2R);
+    const sh = [0, L0*S, 0];
+    const r2 = L2*Math.cos(q2*D2R), z2 = L2*Math.sin(q2*D2R);
+    const el = [r2*c1*S, (L0+z2)*S, -r2*s1*S];
+    const r3 = r2 + L3*Math.cos((q2+q3)*D2R);
+    const z3 = z2 + L3*Math.sin((q2+q3)*D2R);
+    const tip = [r3*c1*S, (L0+z3)*S, -r3*s1*S];
+    return {sh, el, tip, c1, s1};
+  }
+
+  function setJoints(q1, q2, q3, q4) {
+    const {sh, el, tip, c1, s1} = fk(q1, q2, q3);
+    aim(column, [0, 0, 0], sh);
+    aim(upper, sh, el);
+    aim(fore, el, tip);
+    jShoulder.position.set(sh[0], sh[1], sh[2]);
+    jElbow.position.set(el[0], el[1], el[2]);
+    wrist.position.set(tip[0], tip[1], tip[2]);
+    // tool points outward along the arm's reach, then tilts by q4
+    wrist.rotation.set(0, Math.atan2(s1, c1), -q4*D2R, "YXZ");
+    return tip;
+  }
+
+  // ---- reachable workspace shell (toggle with W)
+  const shell = new THREE.Mesh(
+    new THREE.SphereGeometry((L2+L3)*S, 28, 20, 0, Math.PI, 0, Math.PI*0.62),
+    new THREE.MeshBasicMaterial({color:0x58a6ff, wireframe:true,
+                                 transparent:true, opacity:0.10}));
+  shell.position.y = L0*S; shell.visible = false; scene.add(shell);
+
+  // ---- tip trail
+  const MAX = 1200;
+  const tg = new THREE.BufferGeometry();
+  tg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(MAX*3), 3));
+  const trail = new THREE.Line(tg, new THREE.LineBasicMaterial({color:0xffa657}));
+  trail.frustumCulled = false; trail.renderOrder = 2;
+  trail.material.depthTest = false; scene.add(trail);
+  let tn = 0, trailOn = true;
+  function pushTrail(p) {
+    const a = tg.attributes.position;
+    if (tn >= MAX) { a.array.copyWithin(0, 3); tn = MAX - 1; }
+    a.array[tn*3] = p[0]; a.array[tn*3+1] = p[1]; a.array[tn*3+2] = p[2];
+    tn++; a.needsUpdate = true; tg.setDrawRange(0, tn);
+  }
+
+  // ---- phone ghost
+  const ghost = new THREE.Group(); scene.add(ghost);
+  ghost.add(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.30, 0.035),
+    new THREE.MeshStandardMaterial({color:0xbc8cff, roughness:0.5,
+                                    transparent:true, opacity:0.8})));
+  ghost.add(new THREE.AxesHelper(0.26));
+
+  // ---- labels
+  function makeTag(t, c) {
+    const e = document.createElement("div");
+    e.className = "tag"; e.textContent = t; e.style.color = c;
+    document.body.appendChild(e); return e;
+  }
+  const TAGS = [
+    {el: makeTag("YOUR PHONE", "#bc8cff"), obj: ghost, off: 0.32},
+    {el: makeTag("BASE", "#8b949e"), obj: base, off: 0.20},
+    {el: makeTag("SHOULDER", "#bc8cff"), obj: jShoulder, off: 0.18},
+    {el: makeTag("ELBOW", "#3fb0a0"), obj: jElbow, off: 0.16},
+    {el: makeTag("CLIPPER", "#f0883e"), obj: wrist, off: -0.20},
+  ];
+  const _v = new THREE.Vector3();
+  function placeTags() {
+    for (const t of TAGS) {
+      t.obj.getWorldPosition(_v); _v.y += t.off; _v.project(camera);
+      if (_v.z > 1) { t.el.style.display = "none"; continue; }
+      t.el.style.display = "block";
+      t.el.style.left = ((_v.x*0.5+0.5)*innerWidth) + "px";
+      t.el.style.top = ((-_v.y*0.5+0.5)*innerHeight) + "px";
+    }
+  }
+
+  // ---- camera controls
+  let az = 2.35, el2 = 0.38, dist = 4.0, drag = false, lx = 0, ly = 0;
+  addEventListener("pointerdown", e => { drag = true; lx = e.clientX; ly = e.clientY; });
+  addEventListener("pointerup", () => drag = false);
+  addEventListener("pointermove", e => {
+    if (!drag) return;
+    az -= (e.clientX-lx)*0.007;
+    el2 = Math.max(-0.35, Math.min(1.35, el2 + (e.clientY-ly)*0.006));
+    lx = e.clientX; ly = e.clientY;
+  });
+  addEventListener("wheel", e => {
+    e.preventDefault();
+    dist = Math.max(1.6, Math.min(12, dist + Math.sign(e.deltaY)*0.3));
+  }, {passive:false});
+  addEventListener("keydown", e => {
+    const k = e.key.toLowerCase();
+    if (k === "t") { trailOn = !trailOn; if (!trailOn) { tn = 0; tg.setDrawRange(0,0); } }
+    if (k === "w") shell.visible = !shell.visible;
+  });
+
+  // ---- telemetry
+  let st = null;
+  function connect() {
+    const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://")
+                             + location.host + "/ws");
+    ws.onmessage = ev => { try { st = JSON.parse(ev.data); } catch (e) {} };
+    ws.onclose = () => { st = null; setTimeout(connect, 1200); };
+  }
+  connect();
+
+  const pill = (e, on, cls) => {
+    e.classList.remove("on","warn","bad");
+    if (cls) e.classList.add(cls); else if (on) e.classList.add("on");
+  };
+  function bar(id, v, lim) {
+    const f = (v - lim[0]) / (lim[1] - lim[0]);
+    const el = $(id), pct = Math.max(0, Math.min(1, f)) * 100;
+    // centre-zero axes read better growing from the middle
+    if (lim[0] < 0 && lim[1] > 0) {
+      const zero = (-lim[0]) / (lim[1]-lim[0]) * 100;
+      el.style.left = Math.min(pct, zero) + "%";
+      el.style.width = Math.abs(pct - zero) + "%";
+    } else { el.style.left = "0%"; el.style.width = pct + "%"; }
+  }
+
+  function apply() {
+    if (!st) { pill($("pLink"), false, "warn"); return; }
+    const tip = setJoints(st.q1, st.q2, st.q3, st.q4);
+    $("v1").textContent = st.q1.toFixed(1); bar("b1", st.q1, LIM.q1);
+    $("v2").textContent = st.q2.toFixed(1); bar("b2", st.q2, LIM.q2);
+    $("v3").textContent = st.q3.toFixed(1); bar("b3", st.q3, LIM.q3);
+    $("v4").textContent = st.q4.toFixed(1); bar("b4", st.q4, LIM.q4);
+    $("tx").textContent = st.x.toFixed(0) + " mm";
+    $("ty").textContent = st.y.toFixed(0) + " mm";
+    $("tz").textContent = st.z.toFixed(0) + " mm";
+    $("px").textContent = (st.phone_x ?? 0).toFixed(3);
+    $("py").textContent = (st.phone_y ?? 0).toFixed(3);
+    $("pz").textContent = (st.phone_z ?? 0).toFixed(3);
+    $("reach").textContent = st.reachable ? "ok" : "OUT";
+
+    ghost.position.set(1.7 + (st.phone_x ?? 0)*3, 0.9 + (st.phone_y ?? 0)*3,
+                       (st.phone_z ?? 0)*3);
+    ghost.visible = !!st.started;
+
+    const bad = !st.reachable;
+    mLink.color.setHex(bad ? 0x7a5250 : 0x5b6675);
+    if (trailOn && st.started && !st.stale) pushTrail(tip);
+
+    pill($("pStart"), st.started);
+    pill($("pLink"), !st.stale, st.stale ? "warn" : null);
+    pill($("pReach"), st.reachable, st.reachable ? null : "bad");
+  }
+
+  let lw = 0, lh = 0;
+  function resize() {
+    const w = innerWidth, h = innerHeight;
+    if (w === lw && h === lh) return;
+    lw = w; lh = h;
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(w, h);
+    camera.aspect = w/h; camera.updateProjectionMatrix();
+  }
+  function loop() {
+    resize(); apply();
+    camera.position.set(dist*Math.cos(el2)*Math.sin(az), dist*Math.sin(el2) + 0.5,
+                        dist*Math.cos(el2)*Math.cos(az));
+    camera.lookAt(0, 0.62, 0);
+    camera.updateMatrixWorld();
+    placeTags();
+    renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+  }
+  setJoints(0, 45, -90, 0);
+  loop();
+})();
+</script>
+</body>
+</html>

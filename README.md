@@ -248,6 +248,23 @@ joint bars, limit flags, a clipper-tip trail and link/tracking/clutch status.
 Each engaged stroke is recorded from the arm's encoders, so a session leaves
 ordinary teach logs that replay with `teach_phone.py --replay`.
 
+### 4DOF arm teleop (`pose_server.py`, `tools/arm4dof_sim.html`)
+
+The production design is a 4DOF articulated arm — base yaw, shoulder, elbow,
+and a wrist that sets the cut angle — driven in free space by the phone. No
+head, no constrained axis: the phone's position commands the tip and the
+wrist follows your wrist.
+
+```
+uv run python pose_server.py        # then open http://127.0.0.1:8464/
+```
+
+Kinematics live in `fadegpt/eezy_ik.py` (FK, IK, joint limits, reachability)
+and the pose mapping in `fadegpt/pose_mapper.py`. The viewer draws the real
+linkage from the joint angles, with per-joint bars, tip coordinates, a tip
+trail, a reachable-workspace shell (press W) and a reachability warning when
+the phone asks for a point the arm cannot hit.
+
 ### Hardware path (Pi 4 + Arduino)
 
 The Pi runs this Python stack unchanged; the Arduino

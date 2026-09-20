@@ -12,3 +12,6 @@ build/
 phone/**/project.xcworkspace/
 ios/**/project.xcworkspace/
 *.xcuserstate
+
+# branch checkout for comparison
+dp-fadegpt/
