@@ -32,6 +32,7 @@ final class PoseStreamer: NSObject, ObservableObject, ARSessionDelegate {
     /// the arm never moves.
     @Published var linked = false
     @Published var acks = 0
+    private var probesLeft = 0
 
     private let session = ARSession()
     private var connection: NWConnection?
@@ -74,16 +75,40 @@ final class PoseStreamer: NSObject, ObservableObject, ARSessionDelegate {
         connection = conn
         linked = false
         acks = 0
+        probesLeft = 12
+        status = "looking for the robot at \(host)…"
+        // Receiving can only be armed once the connection is ready; arming it
+        // against a .setup connection fails immediately and the loop dies.
+        conn.stateUpdateHandler = { [weak self] state in
+            guard let self, self.connection === conn else { return }
+            switch state {
+            case .ready:
+                self.receiveAcks(on: conn)
+                self.probe(host: host, port: port, conn: conn)
+            case .failed(let e):
+                self.status = "cannot open socket: \(e.localizedDescription)"
+            default:
+                break
+            }
+        }
         conn.start(queue: .main)
-        receiveAcks(on: conn)
-        status = "sending to \(host):\(port) — waiting for the robot"
-        // A single probe, so the link is proven before anyone presses Start.
-        // PING is not in the protocol, so the server rejects it and replies
-        // with an error: an error coming back still proves the round trip.
+    }
+
+    /// Probe until something answers. A single probe is not enough: UDP drops
+    /// packets on a good network too, so one lost datagram would report a
+    /// dead link forever and send someone hunting a bug that is not there.
+    private func probe(host: String, port: UInt16, conn: NWConnection) {
+        guard connection === conn, !linked, probesLeft > 0 else {
+            if !linked && probesLeft <= 0 {
+                status = "no reply from \(host):\(port) — check the address "
+                       + "the server printed, and that both are on the hotspot"
+            }
+            return
+        }
+        probesLeft -= 1
         sendLine("PING")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-            guard let self, !self.linked else { return }
-            self.status = "no reply from \(host) — same Wi-Fi? try hotspot"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.probe(host: host, port: port, conn: conn)
         }
     }
 
@@ -99,7 +124,12 @@ final class PoseStreamer: NSObject, ObservableObject, ARSessionDelegate {
                     self.status = self.streaming ? "streaming" : "robot linked"
                 }
             }
-            if error == nil { self.receiveAcks(on: conn) }
+            // Re-arm unless this connection has been replaced: a single
+            // transient error must not silently end the only thing that can
+            // tell the operator the link is alive.
+            if self.connection === conn, conn.state != .cancelled {
+                self.receiveAcks(on: conn)
+            }
         }
     }
 
@@ -924,6 +954,10 @@ struct ContentView: View {
             streamer.startSession()
             library.host = host
             library.httpPort = (UInt16(portText) ?? 8463) &+ 1
+            // Connect on launch so the link light is meaningful straight
+            // away; previously it stayed idle until someone happened to tap
+            // the reconnect button, which looked identical to a dead network.
+            streamer.connect(host: host, port: UInt16(portText) ?? 8463)
             if !savedUserId.isEmpty {
                 library.userId = savedUserId
                 library.handle = savedHandle
