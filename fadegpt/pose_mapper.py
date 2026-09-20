@@ -18,6 +18,7 @@ from .eezy_ik import (
     Q_HOME,
     forward_kinematics,
     inverse_kinematics,
+    inverse_kinematics_clamped,
     pitch_to_q4,
 )
 from .pose_protocol import RelativePose, pitch_deg_from_quat
@@ -78,22 +79,32 @@ class PoseMapper:
         self._last_t = now
 
         target = self.phone_to_arm_mm(rel.x, rel.y, rel.z)
-        joints = inverse_kinematics(*target)
+        joints, out_of_reach = inverse_kinematics_clamped(*target)
+        self._reachable = not out_of_reach
 
         pitch = pitch_deg_from_quat(rel.qw, rel.qx, rel.qy, rel.qz)
         q4_tgt = pitch_to_q4(pitch)
 
-        if joints is None:
-            self._reachable = False
-            # hold q1..q3; still slew q4
-            self._q[3] = self._slew(self._q[3], q4_tgt, self.max_slew[3], dt)
-            return self.state()
-
-        self._reachable = True
-        desired = [joints.q1, joints.q2, joints.q3, q4_tgt]
-        for i in range(4):
-            self._q[i] = self._slew(self._q[i], desired[i], self.max_slew[i], dt)
+        self._slew_together([joints.q1, joints.q2, joints.q3, q4_tgt], dt)
         return self.state()
+
+    def _slew_together(self, desired: list[float], dt: float) -> None:
+        """Rate-limit every joint by the SAME fraction so they arrive
+        together.
+
+        Limiting each joint independently lets the fast ones finish early,
+        which bends the tip's path: commanding a straight move in one axis
+        visibly wanders in the others until the slowest joint catches up.
+        Scaling the whole step keeps each joint under its own limit while
+        holding the shape of the motion.
+        """
+        need = 0.0
+        for i in range(4):
+            if self.max_slew[i] > 0:
+                need = max(need, abs(desired[i] - self._q[i]) / self.max_slew[i])
+        f = 1.0 if need <= dt or need <= 0.0 else dt / need
+        for i in range(4):
+            self._q[i] += (desired[i] - self._q[i]) * f
 
     @staticmethod
     def _slew(current: float, target: float, max_deg_s: float, dt: float) -> float:

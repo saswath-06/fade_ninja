@@ -103,6 +103,78 @@ def inverse_kinematics(x: float, y: float, z: float,
     return Joints(q1, q2, q3)
 
 
+def workspace_reach(l2: float = L2_MM, l3: float = L3_MM) -> tuple[float, float]:
+    """Min and max distance from the shoulder the tip can actually reach.
+
+    The inner bound is NOT |l2-l3|: the elbow cannot fold past Q3_LIMITS, so
+    the arm bottoms out well before folding flat.
+    """
+    fold = math.radians(Q3_LIMITS[0])
+    d_min = math.sqrt(max(l2 * l2 + l3 * l3 + 2 * l2 * l3 * math.cos(fold), 0.0))
+    return d_min, l2 + l3
+
+
+def inverse_kinematics_clamped(x: float, y: float, z: float, *,
+                               l0: float = L0_MM, l2: float = L2_MM,
+                               l3: float = L3_MM) -> tuple[Joints, bool]:
+    """Always returns a pose: the closest the arm can actually get.
+
+    `inverse_kinematics` refuses anything outside the workspace, which makes
+    the arm freeze mid-pose when you reach past its envelope — the shoulder
+    stops at its limit with the elbow still folded. Here the target is first
+    pulled onto the workspace boundary, so the arm extends toward it: at full
+    stretch the elbow straightens to q3 = 0, giving maximum height and reach.
+
+    The clamping happens in polar terms (distance, then elevation) BEFORE
+    solving, not by clipping joint angles afterwards. Clipping a solved angle
+    swings the tip sideways off the line that was commanded, which shows up
+    as motion in axes the operator never asked for; clamping the target keeps
+    the tip on that line and simply stops it at the edge of the workspace.
+
+    Returns (joints, out_of_reach); the flag still reports honestly that the
+    commanded point was not achievable.
+    """
+    r = math.hypot(x, y)
+    zz = z - l0
+    d = math.hypot(r, zz)
+    d_min, d_max = workspace_reach(l2, l3)
+    out = False
+
+    if d < 1e-9:                            # degenerate: no direction at all
+        r, zz, d, out = d_min, 0.0, d_min, True
+    elif d > d_max:
+        k = d_max / d
+        r, zz, d, out = r * k, zz * k, d_max, True
+    elif d < d_min:
+        k = d_min / d
+        r, zz, d, out = r * k, zz * k, d_min, True
+
+    cos_q3 = (d * d - l2 * l2 - l3 * l3) / (2.0 * l2 * l3)
+    cos_q3 = max(-1.0, min(1.0, cos_q3))
+    q3 = -math.degrees(math.acos(cos_q3))
+
+    k1 = l2 + l3 * math.cos(math.radians(q3))
+    k2 = l3 * math.sin(math.radians(q3))
+    beta = math.atan2(k2, k1)
+    alpha = math.atan2(zz, r)               # elevation of the target
+
+    lo = math.radians(Q2_LIMITS[0]) + beta  # elevation band q2 can serve
+    hi = math.radians(Q2_LIMITS[1]) + beta
+    if alpha < lo:
+        alpha, out = lo, True
+    elif alpha > hi:
+        alpha, out = hi, True
+    q2 = math.degrees(alpha - beta)
+
+    q1 = math.degrees(math.atan2(y, x)) if math.hypot(x, y) > 1e-9 else 0.0
+    if q1 < Q1_LIMITS[0]:
+        q1, out = Q1_LIMITS[0], True
+    elif q1 > Q1_LIMITS[1]:
+        q1, out = Q1_LIMITS[1], True
+
+    return Joints(q1, q2, q3), out
+
+
 def pitch_to_q4(pitch_deg: float) -> float:
     """Map phone pitch to wrist tilt; clamp to Q4_LIMITS only."""
     q4 = pitch_deg * Q4_PER_PITCH

@@ -55,14 +55,21 @@ def test_t35_default_scale_ten_cm_phone_to_three_cm_tip():
     assert az == pytest.approx(P_HOME[2])
 
 
-def test_t36_unreachable_holds_last_good():
+def test_t36_unreachable_reaches_toward_the_target():
+    """Superseded the original 'holds last good'.
+
+    Freezing mid-pose left the shoulder at its limit with the elbow still
+    folded, so the arm stopped well short of the height it can actually
+    reach. It now extends toward an out-of-range target — while still
+    reporting honestly that the point was not achievable.
+    """
     m = PoseMapper()
     m.update(rel(), now=0.0)
     good = m.state()
     st = m.update(rel(y=5.0), now=10.0)
-    assert not st.reachable
-    assert (st.q1, st.q2, st.q3) == pytest.approx(
-        (good.q1, good.q2, good.q3), abs=1e-6)
+    assert not st.reachable, "an out-of-range point must still be flagged"
+    assert st.q3 > good.q3, "elbow should straighten rather than stay folded"
+    assert st.q3 == pytest.approx(0.0, abs=1e-6), "fully extended at the edge"
 
 
 def test_t37_slew_limits_joint_speed():
